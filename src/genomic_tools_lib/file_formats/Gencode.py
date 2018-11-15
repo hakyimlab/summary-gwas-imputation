@@ -60,7 +60,8 @@ def load(path, gene_ids=None, feature_type_whitelist={"gene"}, gene_type_white_l
             gene_type = key_value_pairs[GFTF.K_GENE_TYPE]
             if not gene_type in gene_type_white_list: continue
 
-        if comps[F.GENOMIC_STRAND] == "+":
+
+        if not collapse_strand or comps[F.GENOMIC_STRAND] == "+":
             r = (comps[F.CHROMOSOME], comps[F.N_START_LOCATION], comps[F.N_END_LOCATION], feature_type)
         else:
             r = (comps[F.CHROMOSOME], comps[F.N_END_LOCATION], comps[F.N_START_LOCATION], feature_type)

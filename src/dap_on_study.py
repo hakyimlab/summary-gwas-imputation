@@ -25,6 +25,7 @@ def run(args):
 
     context = DAPUtilities.context_from_args(args)
     available_genes = context.get_available_genes()
+
     for i,gene in enumerate(available_genes):
         _start = timer()
         logging.log(8, "Processing %i/%i:%s", i+1, len(available_genes), gene)

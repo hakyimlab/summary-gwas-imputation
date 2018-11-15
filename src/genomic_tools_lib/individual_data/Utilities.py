@@ -19,7 +19,11 @@ def get_gene_annotation(gene_annotation, gene_to_row, gene_id):
 
 def load_gene_annotation(path, chromosome=None):
     logging.info("Loading gene annotation")
-    g = pandas.read_table(path).rename(columns={"chr":"chromosome"})
+    g = pandas.read_table(path)
+    logging.info("Processing")
+    g = g.rename(columns={"chr":"chromosome", "start_location":"start", "end_location": "end"})
+    if "chr" in g.chromosome.values[0]:
+        g = g.assign(chromosome = g.chromosome.str.extract('chr(\d+)').astype(int))
     logging.info("Discarding sex chromosome data, if any")
     g['chromosome'] = pandas.to_numeric(g['chromosome'], errors='coerce')
     g = g.dropna(subset=['chromosome'])

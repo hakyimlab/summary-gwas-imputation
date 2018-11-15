@@ -293,7 +293,6 @@ if __name__ == "__main__":
     parser.add_argument("--chromosome_format", help="Convert chromosome column to -chr{}- ", action="store_true")
     parser.add_argument("-output_column_map", help="Specify multiple key-value pairs to specify format conversion", nargs=2, action="append")
     parser.add_argument("--insert_value", help="Create a column with a specific value", nargs=2, action="append")
-    parser.add_argument("--fill_column", help="Fill column with specific value", nargs=2, action="append")
     parser.add_argument("-output_order", help="Specify output order", nargs='+')
     parser.add_argument("-output", help="Where the output should go")
     parser.add_argument("--keep_all_original_entries", action="store_true")

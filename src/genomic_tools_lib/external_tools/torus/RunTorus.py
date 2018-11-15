@@ -5,6 +5,7 @@ import gzip
 import shutil
 import logging
 import traceback
+import pandas
 
 from subprocess import call
 
@@ -17,10 +18,17 @@ from ...file_formats import Gencode
 from ...file_formats.eqtl import GTEx
 from ...Exceptions import ReportableException
 
+GENCODE="gencode"
+PARSED="parsed"
+EQTL="eqtl"
+SQTL="sqtl"
+
 class _Context():
     def get_input_eqtl(self): raise Exceptions.ReportableException("Not implemented")
+    def get_input_eqtl_mode(self): raise Exceptions.ReportableException("Not implemented")
     def get_variant_whitelist(self): raise Exceptions.ReportableException("Not implemented")
     def get_input_gene_annotation(self): raise Exceptions.ReportableException("Not implemented")
+    def get_input_gene_annotation_mode(self): raise Exceptions.ReportableException("Not implemented")
     def get_intermediate_folder(self): raise Exceptions.ReportableException("Not implemented")
     def get_torus_exe(self): raise Exceptions.ReportableException("Not implemented")
     def get_output_folder(self): raise Exceptions.ReportableException("Not implemented")
@@ -50,9 +58,23 @@ def _pq_from_eqtl_to_torus(input_path, output_path, variant_whitelist):
             snps.update(d.variant_id.values)
     return snps, genes
 
-def _t_from_eqtl_to_torus(input_path, output_path, variant_whitelist):
+def _t_from_eqtl_to_torus(input_path, output_path, variant_whitelist, eqtl_mode):
     snps=set()
     genes=set()
+
+    _name=None
+
+    if eqtl_mode is None or eqtl_mode.lower() == EQTL:
+        pass
+    elif eqtl_mode.lower() == SQTL:
+        def _intron_name(x):
+            comps = x.split(":")
+            chr = comps[0].split("chr")[1]
+            return "intron_{}_{}_{}".format(chr, comps[1], comps[2])
+        _name = _intron_name
+    else:
+        raise RuntimeError("Unsupported eQTL mode")
+
     with gzip.open(output_path, "w") as o:
         g, v, b, s = 0, 1, 7, 8
         for i,line in Utilities.iterate_file(input_path, skip_first=True):
@@ -61,6 +83,8 @@ def _t_from_eqtl_to_torus(input_path, output_path, variant_whitelist):
             if not _v in variant_whitelist:
                 continue
             _g = comps[g]
+            if _name is not None:
+                _g = _name(_g)
             _z = float(comps[b])/float(comps[s])
             line = "{} {} {:.2f}\n".format(_v, _g, _z)
             o.write(line.encode())
@@ -69,11 +93,11 @@ def _t_from_eqtl_to_torus(input_path, output_path, variant_whitelist):
     return  snps, genes
 
 
-def from_eqtl_to_torus(input_path, output_path, variant_whitelist):
+def from_eqtl_to_torus(input_path, output_path, variant_whitelist, eqtl_mode):
     if re.search(".parquet$", input_path):
         return _pq_from_eqtl_to_torus(input_path, output_path, variant_whitelist)
     elif re.search(".allpairs.txt.gz$", input_path):
-        return _t_from_eqtl_to_torus(input_path, output_path, variant_whitelist)
+        return _t_from_eqtl_to_torus(input_path, output_path, variant_whitelist, eqtl_mode)
     else:
         raise  RuntimeError("Unsupported file")
 
@@ -89,8 +113,15 @@ def generate_torus_snp_map(snps, snp_path):
             chr = chr.split("chr")[1]
             f.write( Utilities.to_line([r, chr, pos]).encode() )
 
-def from_gene_annotation_to_torus(input_path, genes, output_path):
-    annotation = Gencode.load(input_path, gene_ids=genes)
+def from_gene_annotation_to_torus(input_path, genes, output_path, mode):
+    if mode is None or mode.lower() == GENCODE:
+        annotation = Gencode.load(input_path, gene_ids=genes)
+    elif mode.lower() == PARSED:
+        annotation = pandas.read_table(input_path)
+        if len(genes):
+            annotation = annotation[annotation.gene_id.isin({x for x in genes})]
+    else:
+        raise RuntimeError("Unsupported annotation mode")
     annotation = annotation.rename(columns={"chromosome":"Chromosome", "gene_id":"Gene", "start_location":"TSS", "end_location":"TES"})
     annotation = annotation[["Gene","Chromosome", "TSS", "TES"]]
     annotation.Chromosome = annotation.Chromosome.str.split("chr").str.get(1)
@@ -118,7 +149,7 @@ def _run_torus(context):
     logging.info("Processing eqtl file")
     eqtl_path = os.path.join(intermediate, "eqtl.gz")
 
-    snps, genes = from_eqtl_to_torus(context.get_input_eqtl(), eqtl_path, context.get_variant_whitelist())
+    snps, genes = from_eqtl_to_torus(context.get_input_eqtl(), eqtl_path, context.get_variant_whitelist(), context.get_input_eqtl_mode())
 
     logging.info("Processing snp map")
     snp_map_path = os.path.join(intermediate, "snp.gz")
@@ -126,7 +157,7 @@ def _run_torus(context):
 
     logging.info("Processing gene annotation")
     gene_annotation_path = os.path.join(intermediate, "gene.gz")
-    from_gene_annotation_to_torus(context.get_input_gene_annotation(), genes, gene_annotation_path)
+    from_gene_annotation_to_torus(context.get_input_gene_annotation(), genes, gene_annotation_path, context.get_input_gene_annotation_mode())
 
     output_priors = os.path.join(context.get_output_folder(), "priors")
 

@@ -47,8 +47,8 @@ Metadata is a dataframe in the format of 'MetadataTF' class; columns might be nu
     def get_variants_metadata(self, variants=None):
         return _get_variants_metadata(self.metadata, variants)
 
-    def get_variants(self, variants=None, to_pandas=True):
-        return _get_variants(self.metadata, self.variants, variants, to_pandas)
+    def get_variants(self, variants=None, to_pandas=True, specific_individuals=None):
+        return _get_variants(self.metadata, self.variants, variants, to_pandas, specific_individuals)
 
 
 def _metadata_from_raw(data, extra_columns=None):
@@ -90,9 +90,11 @@ def _to_variants(metadata, variants, to_pandas):
         d = d[metadata.id.values]
     return d
 
-def _get_variants(metadata, variants, variant_list, to_pandas):
+def _get_variants(metadata, variants, variant_list, to_pandas, specific_individuals):
     if not variant_list:
         return _to_variants(metadata, variants, to_pandas)
+    if specific_individuals is not None:
+        raise RuntimeError("Not implemented at the moment")
 
     index = {}
     _v = {x for x in variant_list}

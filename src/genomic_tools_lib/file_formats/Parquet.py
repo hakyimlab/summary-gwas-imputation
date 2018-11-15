@@ -93,15 +93,9 @@ def variants_from_metadata(path, frequency_threshold=None):
 
 ########################################################################################################################
 
-class ParquetStudy(Study._Study):
-    """
-variant_file and phenotype_file are meant to be read on the fly.
-Variant data will be loaded into a dictionary to avoid pandas overhead. This is the opposite default to other sibling Study classes.
-variant_metadata, we'll preload.
-    """
-    def __init__(self, variant_file, variant_metadata, phenotype_file, covariates, individuals):
+class ParquetStudyBase(Study._Study):
+    def __init__(self, variant_metadata, phenotype_file, covariates, individuals):
         super().__init__()
-        self.variant_file = variant_file
         self.variant_metadata = variant_metadata
         self.phenotype_file = phenotype_file
         self.individuals = individuals
@@ -109,9 +103,10 @@ variant_metadata, we'll preload.
         self.covariates = covariates
 
     def get_variants_metadata(self, variants=None): return Genotype._get_variants_metadata(self.variant_metadata, variants)
-    def get_variants(self, variants=None, to_pandas=False): return _read(self.variant_file, variants, to_pandas=to_pandas)
     def get_phenos(self, phenos=None, to_pandas=True): return _read(self.phenotype_file, phenos, to_pandas=to_pandas)
     def get_individuals(self): return self.individuals
+
+    #def get_available_pheno_list(self): return Study._get_list(self.pheno)
     def get_available_covariate_list(self): return Study._get_list(self.covariates)
     def get_covariates(self, covariates=None, to_pandas=True): return Study._get(self.covariates, covariates, to_pandas=to_pandas)
 
@@ -120,16 +115,94 @@ variant_metadata, we'll preload.
             self.pheno_list_ = [x for x in self.phenotype_file.schema.names if x != "individual"]
         return self.pheno_list_
 
-def _read(file, columns=None, skip_individuals=False, to_pandas=False):
+class ParquetStudy(ParquetStudyBase):
+    """
+variant_file and phenotype_file are meant to be read on the fly.
+Variant data will be loaded into a dictionary to avoid pandas overhead. This is the opposite default to other sibling Study classes.
+variant_metadata, we'll preload.
+    """
+    def __init__(self, variant_file, variant_metadata, phenotype_file, covariates, individuals):
+        super().__init__(variant_metadata, phenotype_file, covariates, individuals)
+        self.variant_file = variant_file
+
+    def get_variants(self, variants=None, to_pandas=False, omit_individuals=False, specific_individuals=None): return _read(self.variant_file, variants, omit_individuals, to_pandas, specific_individuals)
+
+########################################################################################################################
+
+class ParquetSplitStudy(ParquetStudyBase):
+    """
+variant_file_map is a map from chromosome numbers to parquet variant filed
+phenotype_file is meant to be read on the fly.
+Variant data will be loaded into a dictionary to avoid pandas overhead. This is the opposite default to other sibling Study classes.
+variant_metadata, we'll preload.
+    """
+    def __init__(self, variant_file_map, variant_metadata, phenotype_file=None, covariates=None, individuals=None):
+        super().__init__(variant_metadata, phenotype_file, covariates, individuals)
+        self.variant_file_map = variant_file_map
+
+    def get_variants(self, variants=None, to_pandas=False, omit_individuals=False, specific_individuals=None):
+        """Asssumes all requested varianst in a same chromosome"""
+        if variants is None:
+            raise RuntimeError("This implementation demands a specific list of variants")
+        chr = variants[0].split("_")[0]
+        v = self.variant_file_map[chr]
+        return _read(v, variants, omit_individuals, to_pandas, specific_individuals)
+
+class ParquetSingleSplitStudy(ParquetStudyBase):
+    """
+variant_file_map is a map from chromosome numbers to paths. Each genotype file will be opened when a variant requirement needs it.
+Support only one chromosome open at any givven time.
+phenotype_file is meant to be read on the fly.
+Variant data will be loaded into a dictionary to avoid pandas overhead. This is the opposite default to other sibling Study classes.
+variant_metadata, we'll preload.
+    """
+    def __init__(self, variant_paths, variant_metadata, phenotype_file=None, covariates=None, individuals=None):
+        super().__init__(variant_metadata, phenotype_file, covariates, individuals)
+        self.variant_paths = variant_paths
+        self.last_chr = None
+        self.file = None
+
+    def get_variants(self, variants=None, to_pandas=False, omit_individuals=False, specific_individuals=None):
+        """Asssumes all requested varianst in a same chromosome"""
+        if variants is None:
+            raise RuntimeError("This implementation demands a specific list of variants")
+        chr = variants[0].split("_")[0]
+        if chr != self.last_chr:
+            logging.log(9, "Loading new chromosome requirement: %s", chr)
+            self.last_chr = chr
+            path = self.variant_paths[chr]
+            self.file = pq.ParquetFile(path)
+        return _read(self.file, variants, omit_individuals, to_pandas, specific_individuals)
+
+########################################################################################################################
+
+def _individual_mask(individuals, specific_individuals):
+    if specific_individuals:
+        return [i for i,x in enumerate(individuals) if x in specific_individuals]
+    else:
+        return None
+
+
+def _read(file, columns=None, skip_individuals=False, to_pandas=False, specific_individuals=None):
     if columns is None:
         columns = file.schema.names
     if not skip_individuals:
         columns = ["individual"]+columns
+    if skip_individuals and specific_individuals is not None:
+            raise RuntimeError("Unsupported combination")
     v = file.read(columns=columns)
     if to_pandas:
         v = v.to_pandas()
+        if specific_individuals is not None:
+            indexes = set(specific_individuals)
+            v = v.loc[v.individuals.isin(indexes)]
     else:
-        v = {c.name:(numpy.array(c.to_pylist(), dtype=numpy.float32) if c.name != "individual" else c.to_pylist()) for c in v}
+        if specific_individuals:
+            mask = _individual_mask(v.column(0).to_pylist(), specific_individuals)
+
+        v = {c.name:(numpy.array(c.to_pylist(), dtype=numpy.float32) if c.name != "individual" else numpy.array(c.to_pylist(), dtype=numpy.str)) for c in v}
+        if specific_individuals:
+            v = {k:d[mask] for k,d in v.items()}
     return v
 
 def study_from_parquet(variants, variants_metadata, pheno=None, covariates=None, post_process_variants_metadata=None, chromosome=None, frequency_filter=None):

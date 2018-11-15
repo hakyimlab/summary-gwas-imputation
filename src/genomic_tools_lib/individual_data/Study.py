@@ -8,7 +8,7 @@ class _Study():
     def get_phenotype(self): raise RuntimeError("Not implemented")
 
     def get_variants_metadata(self, variants=None): raise RuntimeError("Not implemented")
-    def get_variants(self, variants=None, to_pandas=None): raise RuntimeError("Not implemented")
+    def get_variants(self, variants=None, to_pandas=None, omit_individuals=False): raise RuntimeError("Not implemented")
     def get_available_variant_list(self): raise RuntimeError("Not implemented")
     def get_available_pheno_list(self): raise RuntimeError("Not implemented")
     def get_phenos(self, phenos=None, to_pandas=None): raise RuntimeError("Not implemented")
@@ -33,7 +33,7 @@ genotype is of class Genotype, phenotype is a pandas dataframe with at least one
     def get_available_covariate_list(self): return _get_list(self.covariates)
     def get_genotype(self): return self.genotype
     def get_variants_metadata(self, variants=None): return _get_variants_metadata(self.genotype.metadata, variants)
-    def get_variants(self, variants=None, to_pandas=True): return self.genotype.get_variants(variants, to_pandas)
+    def get_variants(self, variants=None, to_pandas=True, omit_individuals=False, specific_individuals=None): return self.genotype.get_variants(variants, to_pandas, specific_individuals)
 
 def _get(d, names=None, to_pandas=True):
     if d is None: return None

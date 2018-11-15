@@ -26,6 +26,7 @@ def run(args):
     logging.info("Loading Gencode")
     gencode = Gencode.load(args.gencode_file,
         gene_type_white_list={x for x in args.gene_type_whitelist},
+        transcript_type_whitelist={x for x in args.transcript_type_whitelist},
         selected_key_value_pairs=selected)
     #gencode = _reformat(gencode)
     logging.info("Converting format")
@@ -48,6 +49,7 @@ if __name__ == "__main__":
     parser.add_argument("-gencode_file", help="Where to load file from")
     parser.add_argument("-output", help="Where to save")
     parser.add_argument("-gene_type_whitelist", help="Which types of genes to keep", default=[], nargs="+")
+    parser.add_argument("-transcript_type_whitelist", help="Which types of transcripts to keep", default=[], nargs="+")
     parser.add_argument("-output_column_map", help="Specify multiple key-value pairs to specify format conversion", nargs=2, action="append", default=[])
     parser.add_argument("-verbosity", help="Logging verbosity (actually loquacity)", type=int, default=10)
     args = parser.parse_args()
