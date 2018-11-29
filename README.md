@@ -25,4 +25,4 @@ Colocalization analysis via COLOC is supported on harmonized of imputed GWAS.
 
 # Final comments
 
-Please see the wiki for extensive, in-detail documentation.
+Please see the [wiki](https://github.com/hakyimlab/summary-gwas-imputation/wiki) for extensive, in-detail documentation.
