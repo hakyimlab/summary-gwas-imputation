@@ -27,10 +27,10 @@ def maybe_create_folder(path):
 
 def file_logic(folder, pattern):
     r = re.compile(pattern)
-    p = [x for x in os.listdir(folder) if r.search(x)]
-    p_ = [r.search(x).group(1) for x in p]
-    p = [os.path.join(folder,x) for x in p]
-    return pandas.DataFrame({"name":p_, "path":p})
+    f = sorted([x for x in os.listdir(folder) if r.search(x)])
+    p_ = [r.search(x).group(1) for x in f]
+    p = [os.path.join(folder,x) for x in f]
+    return pandas.DataFrame({"name":p_, "path":p, "file":f})
 
 ########################################################################################################################
 

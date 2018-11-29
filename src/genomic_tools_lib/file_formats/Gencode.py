@@ -53,6 +53,7 @@ def load(path, gene_ids=None, feature_type_whitelist={"gene"}, gene_type_white_l
             if not gene_id in gene_ids: continue
 
         if transcript_type_whitelist:
+            if not GFTF.K_TRANSCRIPT_TYPE in key_value_pairs: continue
             transcript_type = key_value_pairs[GFTF.K_TRANSCRIPT_TYPE]
             if not transcript_type in transcript_type_whitelist: continue
 
