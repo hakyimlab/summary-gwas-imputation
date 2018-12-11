@@ -43,10 +43,12 @@ def _dump(p, d, cov):
             f.write("{}\n".format("\t".join(map(str,i))).encode())
 
 from rpy2.robjects.packages import importr
-susie_bhat = importr('susieR').susie_bhat
+susieR = importr('susieR')
+susie_bhat = susieR.susie_bhat
+susie_z = susieR.susie_z
 summary = robjects.r["summary"]
 
-def _do_susie(d, study, variants_whitelist, n, specific_individuals):
+def _do_susie(d, study, variants_whitelist, n, specific_individuals, mode):
     d_ = d[d.variant_id.isin(variants_whitelist)]
     variants = [x for x in d_.variant_id.values]
     if specific_individuals:
@@ -58,12 +60,19 @@ def _do_susie(d, study, variants_whitelist, n, specific_individuals):
     # d_ = d_[d_.variant_id.isin(present_variants)]
     X = [X[x] for x in d_.variant_id]
     cov = numpy.cov(X, ddof=1)
-
-    b_ = robjects.FloatVector(d_.slope.values)
-    s_ = robjects.FloatVector(d_.slope_se.values)
     cov = robjects.r.matrix(robjects.FloatVector(cov.flatten()), nrow=len(variants))
 
-    return susie_bhat(b_, s_, cov, n=n), d_
+    r = None
+    if mode is None or mode=="z":
+        b_ = robjects.FloatVector(d_.slope.values)
+        s_ = robjects.FloatVector(d_.slope_se.values)
+        r = susie_bhat(b_, s_, cov, n=n)
+    elif mode == "bhat":
+        z_ = robjects.FloatVector(d_.slope/d_.slope_se)
+        r = susie_z(z_, cov)
+    else:
+        raise RuntimeError("Unrecognized mode")
+    return r,d_
 
 def _void_cs(status=None):
     return pandas.DataFrame({"cs": [None], "cs_log10bf": [None], "cs_avg_r2": [None], "cs_min_r2": [None], "variable": [None], "status": [status]})
@@ -115,12 +124,11 @@ def run(args):
         if MAX_N and i > MAX_N:
             logging.info("Early exit")
             break
-
         gene = d.gene_id.values[0]
         logging.log(9, "Processing gene %i:%s", i+1, gene)
-
+        d = d.loc[(~d.slope_se.isnull()) & (d.slope!=0) & (~d.slope.isnull())]
         try:
-            res_, d_ = _do_susie(d, study, variants_whitelist, n, individuals)
+            res_, d_ = _do_susie(d, study, variants_whitelist, n, individuals, args.mode)
             cs, vars =_process_result(res_, d_, gene)
         except Exception as e:
             logging.log(9, "Error while doing susie:\n%s", traceback.format_exc())
@@ -132,7 +140,7 @@ def run(args):
         var_results.append(vars)
 
     logging.info("Saving")
-    cs_results = pandas.concat(cs_results)[["gene_id", "cs", "cs_avg_r2", "cs_log10bf", "cs_min_r2", "variable", "pp_sum", "status"]]
+    cs_results = pandas.concat(cs_results)[["gene_id", "cs", "cs_avg_r2", "cs_log10bf", "cs_min_r2", "var_id", "pp_sum", "status"]]
     Utilities.ensure_requisite_folders(args.cs_output)
     Utilities.save_dataframe(cs_results, args.cs_output)
 
@@ -150,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument("-parquet_genotype_pattern", help="Parquet Genotype file")
     parser.add_argument("-parquet_genotype_metadata", help="Parquet Genotype variant metadata file")
     parser.add_argument("-restrict_to_individuals", help="filter to individuals")
-
+    parser.add_argument("--mode", help="'bhat' or 'z' (z is default)")
     parser.add_argument("-eqtl", help="Run on a GTEX-like eqtl summary stats file")
     parser.add_argument("-sample_size", help="number of samples", type=int)
     parser.add_argument("-cs_output", help="Credible sets.")
@@ -160,6 +168,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    Logging.configure_logging(int(args.parsimony))
+    Logging.configure_logging(int(args.parsimony), with_date=True)
 
     run(args)

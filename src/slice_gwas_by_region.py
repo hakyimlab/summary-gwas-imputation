@@ -3,6 +3,7 @@ __author__ = "alvaro barbeira"
 import os
 import logging
 
+import numpy
 import pandas
 
 from genomic_tools_lib import Utilities, Logging
@@ -32,6 +33,11 @@ def run(args):
         sliced.append(slice)
 
     sliced = pandas.concat(sliced).sort_values(by="r").drop(["r"], axis=1)
+    if args.gtex_sqtl_output_format == "dapg":
+        pass
+    elif args.gtex_sqtl_output_format == "gtex_eqtl":
+        sliced = sliced.assign(gene_id = sliced.region, variant_id=sliced.panel_variant_id, tss_distance = numpy.nan, ma_samples = numpy.nan, maf = numpy.nan, pval_nominal = numpy.nan, slope= sliced.zscore, slope_se=1)
+        sliced = sliced["gene_id", "variant_id", "tss_distance", "ma_samples", "ma_count", "maf", "pval_nominal", "slope", "slope_se"]
     Utilities.save_dataframe(sliced, args.output, header=False)
     logging.info("Finished slicing gwas")
 
@@ -42,6 +48,7 @@ if __name__ == "__main__":
     parser.add_argument("-gwas_file", help="GWAS file, in fixed format (imputed) for now")
     parser.add_argument("-output", help="Where to save the result")
     parser.add_argument("-parsimony", help="How much logging to output", type=int, default=10)
+    parser.add_argument("--output_format", default="dapg")
 
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony)

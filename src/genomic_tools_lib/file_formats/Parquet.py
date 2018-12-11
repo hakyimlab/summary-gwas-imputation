@@ -172,6 +172,7 @@ variant_metadata, we'll preload.
             self.last_chr = chr
             path = self.variant_paths[chr]
             self.file = pq.ParquetFile(path)
+            logging.log(9, "Loaded new chromosome requirement: %s", chr)
         return _read(self.file, variants, omit_individuals, to_pandas, specific_individuals)
 
 ########################################################################################################################
