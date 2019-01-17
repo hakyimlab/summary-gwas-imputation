@@ -27,11 +27,11 @@ def run(args):
 
     if args.output:
         Utilities.ensure_requisite_folders(args.output)
-        entries = Utilities.lineify(DBSnp.generate(args.input, args.fields, args.keep_zero_based))
+        entries = Utilities.lineify(DBSnp.generate(args.input, args.fields, args.keep_zero_based, recode_observed=args.recode_observed))
         Utilities.write_iterable_to_file(entries, args.output, Utilities.to_line(args.fields))
     else:
         Utilities.ensure_requisite_folders(args.output_blacklist)
-        entries = Utilities.lineify(DBSnp.generate_skips(args.input, args.fields, args.keep_zero_based))
+        entries = Utilities.lineify(DBSnp.generate_skips(args.input, args.fields, args.keep_zero_based, recode_observed=args.recode_observed))
         Utilities.write_iterable_to_file(entries, args.output_blacklist, Utilities.to_line(args.fields+ ["reason"]))
 
     end = timer()
@@ -45,6 +45,7 @@ if __name__ == "__main__":
     parser.add_argument("-output", help="output DB SNP file")
     parser.add_argument("-output_blacklist", help="output variants to skip from DB SNP file")
     parser.add_argument("-fields", help="fields to extract", default=["chromosome", "start", "end", "name"], nargs="+")
+    parser.add_argument("--recode_observed", action="store_true")
     parser.add_argument("-parsimony", help="log output parsimony", type=int, default=logging.INFO)
     args = parser.parse_args()
 

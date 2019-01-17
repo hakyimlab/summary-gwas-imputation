@@ -24,6 +24,7 @@ def _ensure_columns(d, input_pvalue_fix=1e-50, enforce_numeric_columns=None):
         if BETA_SIGN in d: d[BETA_SIGN] = None
         d[ZSCORE] = None
         return d
+
     d[EFFECT_ALLELE] = d[EFFECT_ALLELE].str.upper()
     d[NON_EFFECT_ALLELE] = d[NON_EFFECT_ALLELE].str.upper()
 

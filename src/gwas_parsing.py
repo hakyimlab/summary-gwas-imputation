@@ -236,7 +236,8 @@ def fill_from_metadata(args, d):
 
 def clean_up(d):
     d = d.assign(sample_size=[int(x) if not math.isnan(x) else "NA" for x in d.sample_size])
-    d = Genomics.sort(d)
+    if "chromosome" in d.columns.values and "position" in d.columns.values:
+        d = Genomics.sort(d)
     return d
 
 def run(args):

@@ -171,6 +171,7 @@ def dataframe_from_text_data_source(path, keys=None, key_column_name=None, skip_
                 sentinel.add(comp)
                 s[comp].append(c)
 
+
         for c in header_comps:
             if columns and not c in columns: continue
             s[c] = numpy.array(pandas.to_numeric(s[c], errors='ignore'))
