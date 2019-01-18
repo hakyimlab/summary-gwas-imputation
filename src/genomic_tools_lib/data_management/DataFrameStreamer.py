@@ -5,12 +5,11 @@ import logging
 from .TextFileTools import sanitize_components
 from .. import Utilities
 
-def data_frame_streamer(path, sentinel_column, sentinel_white_list=None, sentinel_suffix=None, additional_skip_row_check=None, to_numeric=None, sanitize=False):
+def data_frame_streamer(path, sentinel_column, sentinel_white_list=None, sentinel_suffix=None, additional_skip_row_check=None, to_numeric=None, sanitize=False, header=None):
     _check_sentinel(sentinel_white_list, sentinel_suffix)
 
     found = set()
 
-    header = None
     sentinel_index = None
     sentinel = None
     buffer = []
@@ -18,9 +17,12 @@ def data_frame_streamer(path, sentinel_column, sentinel_white_list=None, sentine
         comps = line.strip().split()
 
         if i == 0:
-            header = comps
-            sentinel_index = header.index(sentinel_column)
-            continue
+            if not header:
+                header = comps
+                sentinel_index = header.index(sentinel_column)
+                continue
+            else:
+                sentinel_index = header.index(sentinel_column)
 
         comps = tuple(comps)
 
