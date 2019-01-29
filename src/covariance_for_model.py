@@ -7,14 +7,11 @@ import sqlite3
 import pandas
 import numpy
 import gzip
-from timeit import default_timer as timer
 
 from pyarrow import parquet as pq
 
-from genomic_tools_lib import Logging, Utilities
-from genomic_tools_lib.data_management import TextFileTools
+from genomic_tools_lib import Logging
 from genomic_tools_lib.miscellaneous import matrices, PandasHelpers
-from genomic_tools_lib.miscellaneous import Genomics
 from genomic_tools_lib.file_formats import Parquet
 
 def get_file_map(args):
@@ -27,6 +24,8 @@ def get_file_map(args):
         p[k] = g
     return p
 
+n_ = re.compile("^(\d+)$")
+
 def run(args):
     if os.path.exists(args.output):
         logging.info("Output already exists, either delete it or move it")
@@ -37,7 +36,8 @@ def run(args):
 
     logging.info("Getting genes")
     with sqlite3.connect(args.model_db) as connection:
-        extra = pandas.read_sql("SELECT * FROM EXTRA", connection)
+        # Pay heed to the order. This avoids arbitrariness in sqlite3 loading of results.
+        extra = pandas.read_sql("SELECT * FROM EXTRA order by gene", connection)
 
     logging.info("Processing")
     with gzip.open(args.output, "w") as f:
@@ -49,6 +49,9 @@ def run(args):
                 w = pandas.read_sql("select * from weights where gene = '{}';".format(g_), connection)
 
                 chr_ = w.varID.values[0].split("_")[0].split("chr")[1]
+                if not n_.search(chr_):
+                    logging.log(9, "Unsupported chromosome: %s", chr_)
+                    continue
                 dosage = file_map[int(chr_)]
                 d = Parquet._read(dosage, columns=w.varID.values, skip_individuals=True)
                 var_ids = list(d.keys())
