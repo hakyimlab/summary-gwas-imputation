@@ -75,7 +75,7 @@ def _do_susie(d, study, variants_whitelist, n, specific_individuals, mode):
     return r,d_
 
 def _void_cs(status=None):
-    return pandas.DataFrame({"cs": [None], "cs_log10bf": [None], "cs_avg_r2": [None], "cs_min_r2": [None], "variable": [None], "status": [status]})
+    return pandas.DataFrame({"cs": [None], "cs_log10bf": [None], "cs_avg_r2": [None], "cs_min_r2": [None], "variable": [None], "status": [status], "var_id": [None]})
 
 def _void_var():
     return pandas.DataFrame({"variable":[], "variable_prob":[], "cs":[]})
@@ -133,7 +133,7 @@ def run(args):
         except Exception as e:
             logging.log(9, "Error while doing susie:\n%s", traceback.format_exc())
             cs = _void_cs("susie_error").assign(gene_id=gene, pp_sum=None)
-            vars = _void_var().assign(gene_id=[], var_id=[])
+            vars = _void_var().assign(gene_id=[gene], var_id=[None])
 
         cs_results.append(cs)
         #if vars.shape[1]>0:

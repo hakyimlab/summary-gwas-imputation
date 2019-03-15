@@ -38,6 +38,7 @@ def run(args):
     with sqlite3.connect(args.model_db) as connection:
         # Pay heed to the order. This avoids arbitrariness in sqlite3 loading of results.
         extra = pandas.read_sql("SELECT * FROM EXTRA order by gene", connection)
+        extra = extra[extra["n.snps.in.model"] > 0]
 
     logging.info("Processing")
     with gzip.open(args.output, "w") as f:
@@ -47,7 +48,6 @@ def run(args):
                 g_ = t.gene
                 logging.log(9, "Proccessing %i:%s", i, g_)
                 w = pandas.read_sql("select * from weights where gene = '{}';".format(g_), connection)
-
                 chr_ = w.varID.values[0].split("_")[0].split("chr")[1]
                 if not n_.search(chr_):
                     logging.log(9, "Unsupported chromosome: %s", chr_)

@@ -86,7 +86,7 @@ if __name__ == "__main__":
     parser.add_argument("-containing", help="only do this subset", type=int)
     parser.add_argument("--keep_palindromic_imputation", help="Report imputed values istead of (original+flipped) values for palindromic snps", action="store_true")
     parser.add_argument("--use_palindromic_snps", help="Use palindromic variants when imputing", action="store_true")
-    parser.add_argument("--standardise_dosages", help="Save variants in memory instead of loading every time, when running by variant", action="store_true")
+    parser.add_argument("--standardise_dosages", help="Standardise dosages before computing (i.e. use correlation matrix)", action="store_true")
     parser.add_argument("--cache_variants", help="Save variants in memory instead of loading every time, when running by variant", action="store_true")
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
 

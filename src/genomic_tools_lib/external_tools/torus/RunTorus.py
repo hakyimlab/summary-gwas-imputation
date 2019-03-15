@@ -6,6 +6,7 @@ import shutil
 import logging
 import traceback
 import pandas
+import numpy
 
 from subprocess import call
 
@@ -22,6 +23,7 @@ GENCODE="gencode"
 PARSED="parsed"
 EQTL="eqtl"
 SQTL="sqtl"
+SQTL_G="sqtl_g"
 
 class _Context():
     def get_input_eqtl(self): raise Exceptions.ReportableException("Not implemented")
@@ -72,6 +74,10 @@ def _t_from_eqtl_to_torus(input_path, output_path, variant_whitelist, eqtl_mode)
             chr = comps[0].split("chr")[1]
             return "intron_{}_{}_{}".format(chr, comps[1], comps[2])
         _name = _intron_name
+    elif eqtl_mode.lower() == SQTL_G:
+        def _intron_name_full(x):
+            return x.replace(":", ".").replace("_", "")
+        _name = _intron_name_full
     else:
         raise RuntimeError("Unsupported eQTL mode")
 
@@ -124,7 +130,8 @@ def from_gene_annotation_to_torus(input_path, genes, output_path, mode):
         raise RuntimeError("Unsupported annotation mode")
     annotation = annotation.rename(columns={"chromosome":"Chromosome", "gene_id":"Gene", "start_location":"TSS", "end_location":"TES"})
     annotation = annotation[["Gene","Chromosome", "TSS", "TES"]]
-    annotation.Chromosome = annotation.Chromosome.str.split("chr").str.get(1)
+    if annotation.Chromosome.dtype == numpy.object:
+        annotation.Chromosome = annotation.Chromosome.str.split("chr").str.get(1)
     Utilities.save_dataframe(annotation, output_path, header=False)
 
 def run_torus(context):
