@@ -1,6 +1,7 @@
 __author__ = "alvaro barbeira"
 import logging
 import pandas
+import gzip
 from . import PandasHelpers
 
 def allele_key(d):

@@ -8,6 +8,7 @@ import numpy
 
 from ..individual_data import Study, Genotype
 from ..DataSink import DataFrameSink
+from ..miscellaneous import Genomics
 
 def _deplete_variants_to_record_batch(variants, variant_ids, individual_ids):
     data = [pa.array(individual_ids)]
@@ -179,10 +180,13 @@ variant_metadata, we'll preload.
 
 def _individual_mask(individuals, specific_individuals):
     if specific_individuals:
-        return [i for i,x in enumerate(individuals) if x in specific_individuals]
+        return [individuals.index(x) for x in specific_individuals]
     else:
         return None
 
+def get_snps_data(annotation_row, window, snp_metadata, snp_file, specific_individuals, to_pandas=False):
+    features_in_window = Genomics.entries_for_gene_annotation(annotation_row, window, snp_metadata)
+    return features_in_window, _read(snp_file, [x for x in features_in_window.id.values], to_pandas=to_pandas, specific_individuals=specific_individuals)
 
 def _read(file, columns=None, skip_individuals=False, to_pandas=False, specific_individuals=None):
     if columns is None:

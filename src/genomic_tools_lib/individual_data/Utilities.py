@@ -8,8 +8,7 @@ import pandas
 from . import Genotype
 from . import Study
 from ..Exceptions import ReportableException
-from ..miscellaneous import Genomics
-
+from ..miscellaneous import Genomics, PandasHelpers
 
 def get_gene_to_row(gene_annotation):
     return {row.gene_id: i for i, row in enumerate(gene_annotation.itertuples())}
@@ -17,12 +16,14 @@ def get_gene_to_row(gene_annotation):
 def get_gene_annotation(gene_annotation, gene_to_row, gene_id):
     return gene_annotation.iloc[gene_to_row[gene_id]]
 
-def load_gene_annotation(path, chromosome=None):
+def load_gene_annotation(path, chromosome=None, sub_batches=None, sub_batch=None):
     logging.info("Loading gene annotation")
     g = pandas.read_table(path)
     logging.info("Processing")
     g = g.rename(columns={"chr":"chromosome", "start_location":"start", "end_location": "end"})
     if "chr" in g.chromosome.values[0]:
+        logging.info("Discarding non-autosomes")
+        g = g[g.chromosome.str.contains("chr(\d+)")]
         g = g.assign(chromosome = g.chromosome.str.extract('chr(\d+)').astype(int))
     logging.info("Discarding sex chromosome data, if any")
     g['chromosome'] = pandas.to_numeric(g['chromosome'], errors='coerce')
@@ -30,6 +31,8 @@ def load_gene_annotation(path, chromosome=None):
     g.chromosome = g.chromosome.astype(int)
     if chromosome:
         g = g.loc[g.chromosome == chromosome]
+    if sub_batches is not None and sub_batch is not None:
+        g = PandasHelpers.sub_batch(g, sub_batches, sub_batch)
     return g
 
 def trim_variant_metadata_on_gene_annotation(vm_, gene_annotation, window, _log_level_v=logging.INFO, id_column="id"):
