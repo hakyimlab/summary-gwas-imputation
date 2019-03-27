@@ -5,6 +5,8 @@ import os
 import logging
 import gzip
 import numpy
+import pandas
+import collections
 
 import pyarrow.parquet as pq
 
@@ -24,12 +26,17 @@ pandas2ri.activate()
 
 def initialize():
     global train_elastic_net
+    global set_seed
     path = os.path.split(sys.argv[0])[0]
     path = os.path.join(path, "elastic_net.R")
     robjects.r['source'](path)
     train_elastic_net = robjects.r['train_elastic_net']
+    set_seed = robjects.r['set_seed']
 ########################################################################################################################
 
+def _save(d_, features_, features_data_, gene):
+    pandas.DataFrame({gene:d_[gene]}).to_csv("y.txt", index=False, sep="\t")
+    pandas.DataFrame(collections.OrderedDict([(v,features_data_[v]) for v in features_.id.values])).to_csv("x.txt", index=False, sep="\t")
 
 
 def run(args):
@@ -48,6 +55,11 @@ def run(args):
         logging.info("covariance output exists already, delete it or move it")
         return
 
+    r = args.output_prefix + "_run.txt.gz"
+    if os.path.exists(wp):
+        logging.info("run output exists already, delete it or move it")
+        return
+
     logging.info("Starting")
     Utilities.ensure_requisite_folders(args.output_prefix)
 
@@ -58,12 +70,17 @@ def run(args):
     logging.info("Loading data annotation")
     data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
     data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
+    logging.info("Kept %i entries", data_annotation.shape[0])
 
     logging.info("Opening features annotation")
     if not args.chromosome:
         features_metadata = pq.read_table(args.features_annotation).to_pandas()
     else:
         features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
+
+    if args.chromosome and args.sub_batches:
+        logging.info("Trimming variants")
+        features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
 
     if args.rsid_whitelist:
         logging.info("Filtering features annotation")
@@ -74,9 +91,21 @@ def run(args):
     logging.info("Opening features")
     features = pq.ParquetFile(args.features)
 
-    write_header=True
+    logging.info("Setting R seed")
+    s = numpy.random.randint(1e8)
+    set_seed(s)
+    if args.run_tag:
+        d = pandas.DataFrame({"run":[args.run_tag], "cv_seed":[s]})[["run", "cv_seed"]]
+        Utilities.save_dataframe(d, r)
+
+    WEIGHTS_FIELDS=["gene", "rsid", "varID", "ref_allele", "eff_allele", "weight"]
+    SUMMARY_FIELDS=["gene", "genename", "gene_type", "alpha", "n_snps_in_window", "n.snps.in.model",
+                          "test_R2_avg", "test_R2_sd", "cv_R2_avg", "cv_R2_sd", "in_sample_R2", "nested_cv_fisher_pval",
+                          "rho_avg", "rho_se", "rho_zscore", "pred.perf.R2", "pred.perf.pval", "pred.perf.qval"]
     with gzip.open(wp, "w") as w:
+        w.write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
         with gzip.open(sp, "w") as s:
+            s.write(("\t".join(SUMMARY_FIELDS) + "\n").encode())
             with gzip.open(cp, "w") as c:
                 c.write("GENE RSID1 RSID2 VALUE\n".encode())
                 for i,data_annotation_ in enumerate(data_annotation.itertuples()):
@@ -84,6 +113,10 @@ def run(args):
                     logging.log(8, "loading data")
                     d_ = Parquet._read(data, [data_annotation_.gene_id])
                     features_, features_data_ = Parquet.get_snps_data(data_annotation_, args.window, features_metadata, features, [x for x in d_["individual"]])
+                    if features_.shape[0] == 0:
+                        logging.log(9, "No features available")
+                        continue
+
                     logging.log(8, "training")
                     x = numpy.array([features_data_[v] for v in features_.id.values])
                     dimnames = robjects.ListVector([(1,robjects.StrVector(d_["individual"])), (2,robjects.StrVector(features_.id.values))])
@@ -104,16 +137,14 @@ def run(args):
                     weights = weights[["gene", "rsid", "varID", "ref_allele", "eff_allele", "weight"]]
                     if args.output_rsids:
                         weights.loc[weights.rsid == "NA", "rsid"] = weights.loc[weights.rsid == "NA", "varID"]
-                    w.write(weights.to_csv(sep="\t", index=False, header=write_header).encode())
+                    w.write(weights.to_csv(sep="\t", index=False, header=False).encode())
 
                     summary = pandas2ri.ri2py(res[1]).\
                         assign(gene=data_annotation_.gene_id, genename=data_annotation_.gene_name, gene_type=data_annotation_.gene_type).\
                         rename(columns={"n_features":"n_snps_in_window", "n_features_in_model":"n.snps.in.model", "zscore_pval":"pred.perf.pval", "rho_avg_squared":"pred.perf.R2"})
                     summary["pred.perf.qval"] = None
-                    summary = summary[["gene", "genename", "gene_type", "alpha", "n_snps_in_window", "n.snps.in.model",
-                          "test_R2_avg", "test_R2_sd", "cv_R2_avg", "cv_R2_sd", "in_sample_R2", "nested_cv_fisher_pval",
-                          "rho_avg", "rho_se", "rho_zscore", "pred.perf.R2", "pred.perf.pval", "pred.perf.qval"]]
-                    s.write(summary.to_csv(sep="\t", index=False, header=write_header).encode())
+                    summary = summary[SUMMARY_FIELDS]
+                    s.write(summary.to_csv(sep="\t", index=False, header=False).encode())
 
                     var_ids = [x for x in weights.varID.values]
                     cov = numpy.cov([features_data_[k] for k in var_ids], ddof=1)
@@ -140,6 +171,7 @@ if __name__ == "__main__":
     parser.add_argument("-data")
     parser.add_argument("-data_annotation")
     parser.add_argument("-window", type = int)
+    parser.add_argument("--run_tag")
     parser.add_argument("--output_rsids", action="store_true")
     parser.add_argument("--chromosome", type = int)
     parser.add_argument("--sub_batches", type = int)

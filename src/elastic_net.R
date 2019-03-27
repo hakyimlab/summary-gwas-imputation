@@ -86,6 +86,12 @@ matrixify_ <- function(x) {
   x
 }
 
+set_seed <- function(seed = NA) {
+    seed <- ifelse(is.na(seed), sample(1:1000000, 1), seed)
+    set.seed(seed)
+    seed
+}
+
 train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.5, x_weight=NULL, matrixify=FALSE) {
     if (matrixify) {
      x <- matrixify_(x)
@@ -135,9 +141,9 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
         if (fit$nzero[best_lam_ind] > 0) {
 
           weights <- fit$glmnet.fit$beta[which(fit$glmnet.fit$beta[,best_lam_ind] != 0), best_lam_ind]
-
+          weights_n <- names(fit$glmnet.fit$beta[,best_lam_ind])[which(fit$glmnet.fit$beta[,best_lam_ind] != 0)]
           #weighted_f <- names(fit$glmnet.fit$beta[,best_lam_ind])[which(fit$glmnet.fit$beta[,best_lam_ind] != 0)]
-          w <-  data.frame(weight=weights %>% as.double, feature=weights %>% names, stringsAsFactors=FALSE)
+          w <-  data.frame(weight=weights %>% as.double, feature=weights_n, stringsAsFactors=FALSE)
           model_summary <- data.frame(alpha=alpha, n_features=ncol(x), n_features_in_model=fit$nzero[best_lam_ind], lambda_min_mse=fit$lambda[best_lam_ind],
                             test_R2_avg=R2_avg, test_R2_sd=R2_sd, cv_R2_avg=cv_R2_avg, cv_R2_sd=cv_R2_sd, in_sample_R2=training_R2,
                             nested_cv_fisher_pval=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=rho_zscore, rho_avg_squared=rho_avg_squared, zscore_pval=zscore_pval,
