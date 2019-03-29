@@ -14,7 +14,7 @@ from genomic_tools_lib import Utilities, Logging
 from genomic_tools_lib.data_management import TextFileTools
 from genomic_tools_lib.individual_data import Utilities as StudyUtilities
 from genomic_tools_lib.file_formats import Parquet
-from genomic_tools_lib.miscellaneous import matrices
+from genomic_tools_lib.miscellaneous import matrices, Genomics
 
 ########################################################################################################################
 import rpy2.robjects as robjects
@@ -38,6 +38,15 @@ def _save(d_, features_, features_data_, gene):
     pandas.DataFrame({gene:d_[gene]}).to_csv("y.txt", index=False, sep="\t")
     pandas.DataFrame(collections.OrderedDict([(v,features_data_[v]) for v in features_.id.values])).to_csv("x.txt", index=False, sep="\t")
 
+def get_weights(x_weights):
+    if x_weights[1] == "PIP":
+        w = pandas.read_table(x_weights[0], usecols=["gene", "variant_id", "pip"]).rename(columns={"gene":"gene_id", "pip":"w", "variant_id":"id"})
+        threshold = float(x_weights[2])
+        w = w[w.w >= threshold]
+        w.w = 1 - w.w #Less penalty to the more probable snps
+    else:
+        raise RuntimeError("unsupported weights argument")
+    return w
 
 def run(args):
     wp = args.output_prefix + "_weights.txt.gz"
@@ -88,6 +97,15 @@ def run(args):
         whitelist = set(whitelist)
         features_metadata = features_metadata[features_metadata.rsid.isin(whitelist)]
 
+    if args.features_weights:
+        logging.info("Loading weights")
+        x_weights = get_weights(args.features_weights)
+        x_weights = x_weights[x_weights.id.isin(features_metadata.id)]
+        logging.info("Filtering features metadata to those available in weights")
+        features_metadata = features_metadata[features_metadata.id.isin(x_weights.id)]
+    else:
+        x_weights = None
+
     logging.info("Opening features")
     features = pq.ParquetFile(args.features)
 
@@ -102,6 +120,8 @@ def run(args):
     SUMMARY_FIELDS=["gene", "genename", "gene_type", "alpha", "n_snps_in_window", "n.snps.in.model",
                           "test_R2_avg", "test_R2_sd", "cv_R2_avg", "cv_R2_sd", "in_sample_R2", "nested_cv_fisher_pval",
                           "rho_avg", "rho_se", "rho_zscore", "pred.perf.R2", "pred.perf.pval", "pred.perf.qval"]
+
+
     with gzip.open(wp, "w") as w:
         w.write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
         with gzip.open(sp, "w") as s:
@@ -112,22 +132,36 @@ def run(args):
                     logging.log(9, "processing %i:%s", i, data_annotation_.gene_id)
                     logging.log(8, "loading data")
                     d_ = Parquet._read(data, [data_annotation_.gene_id])
-                    features_, features_data_ = Parquet.get_snps_data(data_annotation_, args.window, features_metadata, features, [x for x in d_["individual"]])
+                    features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
+
+                    if x_weights is not None:
+                        x_w = features_[["id"]].merge(x_weights[x_weights.gene_id == data_annotation_.gene_id], on="id")
+                        features_ = features_[features_.id.isin(x_w.id)]
+                        x_w = robjects.FloatVector(x_w.w.values)
+                    else:
+                        x_w = None
+
                     if features_.shape[0] == 0:
                         logging.log(9, "No features available")
                         continue
+
+                    features_data_ = Parquet._read(features, [x for x in features_.id.values],
+                                                   specific_individuals=[x for x in d_["individual"]])
 
                     logging.log(8, "training")
                     x = numpy.array([features_data_[v] for v in features_.id.values])
                     dimnames = robjects.ListVector([(1,robjects.StrVector(d_["individual"])), (2,robjects.StrVector(features_.id.values))])
                     x = robjects.r["matrix"](robjects.FloatVector(x.flatten()), ncol=features_.shape[0], dimnames=dimnames)
                     y = robjects.FloatVector(d_[data_annotation_.gene_id])
-                    res = train_elastic_net(y, x)
+                    res = train_elastic_net(y, x, penalty_factor=x_w) #observation weights, not explanatory variable weight :( , x_weight = x_w)
 
                     weights = pandas2ri.ri2py(res[0])
                     if weights.shape[0] == 0:
                         logging.log(9, "no weights, skipping")
                         continue
+
+                    # _save(d_, features_, features_data_, data_annotation_.gene_id)
+                    # from IPython import embed; embed(); quit()
 
                     logging.log(8, "saving")
                     weights = weights.assign(gene= data_annotation_.gene_id).\
@@ -137,14 +171,14 @@ def run(args):
                     weights = weights[["gene", "rsid", "varID", "ref_allele", "eff_allele", "weight"]]
                     if args.output_rsids:
                         weights.loc[weights.rsid == "NA", "rsid"] = weights.loc[weights.rsid == "NA", "varID"]
-                    w.write(weights.to_csv(sep="\t", index=False, header=False).encode())
+                    w.write(weights.to_csv(sep="\t", index=False, header=False, na_rep="NA").encode())
 
                     summary = pandas2ri.ri2py(res[1]).\
                         assign(gene=data_annotation_.gene_id, genename=data_annotation_.gene_name, gene_type=data_annotation_.gene_type).\
                         rename(columns={"n_features":"n_snps_in_window", "n_features_in_model":"n.snps.in.model", "zscore_pval":"pred.perf.pval", "rho_avg_squared":"pred.perf.R2"})
                     summary["pred.perf.qval"] = None
                     summary = summary[SUMMARY_FIELDS]
-                    s.write(summary.to_csv(sep="\t", index=False, header=False).encode())
+                    s.write(summary.to_csv(sep="\t", index=False, header=False, na_rep="NA").encode())
 
                     var_ids = [x for x in weights.varID.values]
                     cov = numpy.cov([features_data_[k] for k in var_ids], ddof=1)
@@ -166,6 +200,7 @@ def run(args):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser("Train Elastic Net prediction models from GLMNET")
+    parser.add_argument("--features_weights", nargs="+")
     parser.add_argument("-features")
     parser.add_argument("-features_annotation")
     parser.add_argument("-data")

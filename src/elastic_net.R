@@ -21,7 +21,7 @@ calc_corr <- function(y, y_pred) {
 }
 
 
-nested_cv_elastic_net_perf <- function(x, y, n_samples, n_train_test_folds, n_k_folds, alpha) {
+nested_cv_elastic_net_perf <- function(x, y, n_samples, n_train_test_folds, n_k_folds, alpha, observation_weights, penalty_factor) {
   # Gets performance estimates for k-fold cross-validated elastic-net models.
   # Splits data into n_train_test_folds disjoint folds, roughly equal in size,
   # and for each fold, calculates a n_k_folds cross-validated elastic net model. Lambda parameter is
@@ -44,15 +44,16 @@ nested_cv_elastic_net_perf <- function(x, y, n_samples, n_train_test_folds, n_k_
     y_train <- y[train_idxs]
     x_test <- x[test_idxs, ]
     y_test <- y[test_idxs]
+    observation_weights_ <- observation_weights[train_idxs]
     # Inner-loop - split up training set for cross-validation to choose lambda.
     cv_fold_ids <- generate_fold_ids(length(y_train), n_k_folds)
     y_pred <- tryCatch({
       # Fit model with training data.
-      fit <- cv.glmnet(x_train, y_train, nfolds = n_k_folds, alpha = alpha, type.measure='mse', foldid = cv_fold_ids)
+      fit <- cv.glmnet(x_train, y_train, nfolds = n_k_folds, alpha = alpha, type.measure='mse', foldid = cv_fold_ids, weights = observation_weights_, penalty.factor = penalty_factor)
       # Predict test data using model that had minimal mean-squared error in cross validation.
       predict(fit, x_test, s = 'lambda.min')},
       # if the elastic-net model did not converge, predict the mean of the y_train (same as all non-intercept coef=0)
-      error = function(cond) rep(mean(y_train), length(y_test)))
+      error = function(cond) { message(cond); rep(mean(y_train), length(y_test)) })
     R2_folds[test_fold] <- calc_R2(y_test, y_pred)
     # Get p-value for correlation test between predicted y and actual y.
     # If there was no model, y_pred will have var=0, so cor.test will yield NA.
@@ -92,11 +93,18 @@ set_seed <- function(seed = NA) {
     seed
 }
 
-train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.5, x_weight=NULL, matrixify=FALSE) {
+train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.5, observation_weights=NULL, penalty_factor=NULL,  matrixify=FALSE) {
     if (matrixify) {
      x <- matrixify_(x)
     }
-    perf_measures <- nested_cv_elastic_net_perf(x, y, length(y), n_train_test_folds, n_k_folds, alpha)
+    if (is.null(observation_weights)) {
+        observation_weights = rep(1, nrow(x))
+    }
+    if (is.null(penalty_factor)) {
+        penalty_factor = rep(1, ncol(x))
+    }
+
+    perf_measures <- nested_cv_elastic_net_perf(x, y, length(y), n_train_test_folds, n_k_folds, alpha, observation_weights, penalty_factor)
 
     R2_avg <- perf_measures$R2_avg
     R2_sd <- perf_measures$R2_sd
@@ -108,8 +116,10 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
     zscore_pval <- perf_measures$zscore_pval
 
     cv_fold_ids <- generate_fold_ids(length(y), n_k_folds)
-    fit <- tryCatch(cv.glmnet(x, y, nfolds = n_k_folds, alpha = alpha, type.measure='mse', foldid = cv_fold_ids, keep = TRUE),
-                      error = function(cond) {message('Error'); message(geterrmessage()); list()})
+    fit <- tryCatch(
+      cv.glmnet(x, y, nfolds = n_k_folds, alpha = alpha, type.measure='mse', foldid = cv_fold_ids, keep = TRUE, weights = observation_weights, penalty.factor = penalty_factor),
+      error = function(cond) {message('Error'); message(geterrmessage()); list()}
+    )
 
     if (length(fit) > 0) {
         cv_R2_folds <- rep(0, n_k_folds)
