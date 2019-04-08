@@ -9,6 +9,7 @@ import gzip
 
 from genomic_tools_lib import Utilities, Logging
 from genomic_tools_lib.file_formats import Gencode
+from genomic_tools_lib.miscellaneous import Models
 from genomic_tools_lib.data_management import DataFrameStreamer, KeyedDataSource
 
 def _gene_annotation(path):
@@ -67,13 +68,10 @@ def run(args):
         extra.to_sql("extra", conn, index=False)
 
         logging.info("Creating indices")
-        cursor = conn.cursor()
-        cursor.execute("CREATE INDEX gene_model_summary ON extra (gene)")
-        cursor.execute("CREATE INDEX weights_gene ON weights (gene)")
-        cursor.execute("CREATE INDEX weights_rsid ON weights (rsid)")
-        cursor.execute("CREATE INDEX weights_rsid_gene ON weights (rsid, gene)")
+        Models.model_indexes(conn)
 
     logging.info("Finished building model.")
+
 
 if __name__ == "__main__":
     import argparse

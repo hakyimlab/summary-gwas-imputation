@@ -46,7 +46,7 @@ def run(args):
         with sqlite3.connect(args.model_db) as connection:
             for i,t in enumerate(extra.itertuples()):
                 g_ = t.gene
-                logging.log(9, "Proccessing %i:%s", i, g_)
+                logging.log(9, "Proccessing %i/%i:%s", i, extra.shape[0], g_)
                 w = pandas.read_sql("select * from weights where gene = '{}';".format(g_), connection)
                 chr_ = w.varID.values[0].split("_")[0].split("chr")[1]
                 if not n_.search(chr_):

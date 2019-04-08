@@ -6,6 +6,7 @@ import re
 import os
 
 from genomic_tools_lib import Utilities, Logging
+from genomic_tools_lib.miscellaneous import Models
 
 __author__ = "alvaro barbeira"
 
@@ -29,17 +30,14 @@ def run(args):
     logging.info("Loading model summaries")
     extra = _read_2(args.input_prefix, "_(.*)_summary.txt.gz")
     extra = extra[(extra["pred.perf.pval"] < 0.05) & (extra.rho_avg >0.1)]
-    logging.info("Saving extra")
-    db = args.output_prefix + ".db"
-    with sqlite3.connect(db) as conn:
-        extra.to_sql("extra", conn, index=False)
 
     logging.info("Loading weights")
     weights = _read_2(args.input_prefix, "_(.*)_weights.txt.gz")
     weights = weights[weights.gene.isin(extra.gene)]
-    logging.info("Saving weights")
-    with sqlite3.connect(db) as conn:
-        weights.to_sql("weights", conn, index=False)
+
+    db = args.output_prefix + ".db"
+    logging.info("Saving db")
+    Models.create_model_db(db, extra, weights)
 
     logging.info("Processing covariances")
     genes = {x for x in extra.gene}
@@ -60,7 +58,6 @@ def run(args):
                         continue
                     cov_.write(l)
     logging.info("Done")
-
 
 if __name__ == "__main__":
     import argparse
