@@ -63,11 +63,11 @@ def _do_susie(d, study, variants_whitelist, n, specific_individuals, mode):
     cov = robjects.r.matrix(robjects.FloatVector(cov.flatten()), nrow=len(variants))
 
     r = None
-    if mode is None or mode=="z":
+    if mode is None or mode=="bhat":
         b_ = robjects.FloatVector(d_.slope.values)
         s_ = robjects.FloatVector(d_.slope_se.values)
         r = susie_bhat(b_, s_, cov, n=n)
-    elif mode == "bhat":
+    elif mode == "z":
         z_ = robjects.FloatVector(d_.slope/d_.slope_se)
         r = susie_z(z_, cov)
     else:
@@ -158,7 +158,7 @@ if __name__ == "__main__":
     parser.add_argument("-parquet_genotype_pattern", help="Parquet Genotype file")
     parser.add_argument("-parquet_genotype_metadata", help="Parquet Genotype variant metadata file")
     parser.add_argument("-restrict_to_individuals", help="filter to individuals")
-    parser.add_argument("--mode", help="'bhat' or 'z' (z is default)")
+    parser.add_argument("--mode", help="'bhat' or 'z' (bhat is default)")
     parser.add_argument("-eqtl", help="Run on a GTEX-like eqtl summary stats file")
     parser.add_argument("-sample_size", help="number of samples", type=int)
     parser.add_argument("-cs_output", help="Credible sets.")

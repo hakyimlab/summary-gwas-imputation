@@ -28,11 +28,18 @@ def _read_2(input_prefix, stem):
 
 def run(args):
     logging.info("Loading model summaries")
-    extra = _read_2(args.input_prefix, "_(.*)_summary.txt.gz")
-    extra = extra[(extra["pred.perf.pval"] < 0.05) & (extra.rho_avg >0.1)]
+    extra = _read_2(args.input_prefix, "_summary.txt.gz")
+    extra = extra[extra["n.snps.in.model"] > 0]
+    if "rho_avg" in extra:
+        extra = extra[(extra["pred.perf.pval"] < 0.05) & (extra.rho_avg >0.1)]
+    else:
+        extra = extra[(extra["pred.perf.pval"] < 0.05)]
+        extra = extra.assign(rho_avg = None)
+    if not "pred.perf.qval" in extra:
+        extra["pred.perf.qval"] = None
 
     logging.info("Loading weights")
-    weights = _read_2(args.input_prefix, "_(.*)_weights.txt.gz")
+    weights = _read_2(args.input_prefix, "_weights.txt.gz")
     weights = weights[weights.gene.isin(extra.gene)]
 
     db = args.output_prefix + ".db"
@@ -43,7 +50,7 @@ def run(args):
     genes = {x for x in extra.gene}
 
     path_ = os.path.split(args.input_prefix)
-    r = re.compile(path_[1] + "_(.*)_covariance.txt.gz")
+    r = re.compile(path_[1] + "_covariance.txt.gz")
     files = sorted([x for x in os.listdir(path_[0]) if r.search(x)])
     files = [os.path.join(path_[0], x) for x in files]
     cov = args.output_prefix + ".txt.gz"

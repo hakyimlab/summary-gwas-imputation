@@ -51,7 +51,7 @@ def run(args):
             with gzip.open(args.output_prefix+ ".model_summary.txt.gz", mode="w") as model_summary:
                 model_summary.write("gene\tpes\tpse_se\tlog_nc\tlog10_nc\n".encode())
                 with gzip.open(args.output_prefix+ ".variants_pip.txt.gz", mode="w") as variant_pip:
-                    variant_pip.write("gene\trank\tvariant_id\tpip\t\tlog10_abvf\tcluster_id\n".encode())
+                    variant_pip.write("gene\trank\tvariant_id\tpip\tlog10_abvf\tcluster_id\n".encode())
                     with gzip.open(args.output_prefix + ".clusters.txt.gz", mode="w") as clusters:
                         clusters.write("gene\tcluster\tn_snps\tpip\taverage_2\n".encode())
                         with gzip.open(args.output_prefix + ".cluster_correlations.txt.gz", mode="w") as cluster_correlations:

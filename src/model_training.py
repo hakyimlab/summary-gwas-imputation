@@ -13,7 +13,7 @@ import pyarrow.parquet as pq
 from genomic_tools_lib import Utilities, Logging
 from genomic_tools_lib.data_management import TextFileTools
 from genomic_tools_lib.individual_data import Utilities as StudyUtilities
-from genomic_tools_lib.file_formats import Parquet
+from genomic_tools_lib.file_formats import Parquet, Miscellaneous
 from genomic_tools_lib.miscellaneous import matrices, Genomics
 
 ########################################################################################################################
@@ -38,11 +38,10 @@ def _save(d_, features_, features_data_, gene):
     pandas.DataFrame({gene:d_[gene]}).to_csv("y.txt", index=False, sep="\t")
     pandas.DataFrame(collections.OrderedDict([(v,features_data_[v]) for v in features_.id.values])).to_csv("x.txt", index=False, sep="\t")
 
-def get_weights(x_weights):
+def get_weights(x_weights, id_whitelist):
     if x_weights[1] == "PIP":
-        w = pandas.read_table(x_weights[0], usecols=["gene", "variant_id", "pip"]).rename(columns={"gene":"gene_id", "pip":"w", "variant_id":"id"})
-        threshold = float(x_weights[2])
-        w = w[w.w >= threshold]
+        w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
+        w = w.rename(columns={"gene":"gene_id", "pip":"w", "variant_id":"id"})
         w.w = 1 - w.w #Less penalty to the more probable snps
     else:
         raise RuntimeError("unsupported weights argument")
@@ -99,10 +98,10 @@ def run(args):
 
     if args.features_weights:
         logging.info("Loading weights")
-        x_weights = get_weights(args.features_weights)
-        x_weights = x_weights[x_weights.id.isin(features_metadata.id)]
+        x_weights = get_weights(args.features_weights, {x for x in features_metadata.id})
         logging.info("Filtering features metadata to those available in weights")
         features_metadata = features_metadata[features_metadata.id.isin(x_weights.id)]
+        logging.info("Kept %d entries", features_metadata.shape[0])
     else:
         x_weights = None
 
