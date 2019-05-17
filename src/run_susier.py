@@ -115,6 +115,8 @@ def run(args):
 
     individuals = None if not args.restrict_to_individuals else TextFileTools.load_list(args.restrict_to_individuals)
 
+    genes = None if not args.restrict_to_genes else set(TextFileTools.load_list(args.restrict_to_genes))
+
     cs_results = []
     var_results = []
     logging.info("Beggining process")
@@ -125,6 +127,9 @@ def run(args):
             logging.info("Early exit")
             break
         gene = d.gene_id.values[0]
+        if genes is not None and gene.split('.')[0] not in genes:
+            logging.log(9, "Skipping gene: %s", gene)
+            continue
         logging.log(9, "Processing gene %i:%s", i+1, gene)
         d = d.loc[(~d.slope_se.isnull()) & (d.slope!=0) & (~d.slope.isnull())]
         try:
@@ -139,10 +144,13 @@ def run(args):
         #if vars.shape[1]>0:
         var_results.append(vars)
 
-    logging.info("Saving")
-    cs_results = pandas.concat(cs_results)[["gene_id", "cs", "cs_avg_r2", "cs_log10bf", "cs_min_r2", "var_id", "pp_sum", "status"]]
-    Utilities.ensure_requisite_folders(args.cs_output)
-    Utilities.save_dataframe(cs_results, args.cs_output)
+    if len(cs_results) > 0:
+        logging.info("Saving")
+        cs_results = pandas.concat(cs_results)[["gene_id", "cs", "cs_avg_r2", "cs_log10bf", "cs_min_r2", "var_id", "pp_sum", "status"]]
+        Utilities.ensure_requisite_folders(args.cs_output)
+        Utilities.save_dataframe(cs_results, args.cs_output)
+    else:
+        logging.info('No results')
 
     if len(var_results) > 0:
         var_results = pandas.concat(var_results)[["gene_id", "var_id",  "cs", "variable_prob"]]
@@ -158,6 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("-parquet_genotype_pattern", help="Parquet Genotype file")
     parser.add_argument("-parquet_genotype_metadata", help="Parquet Genotype variant metadata file")
     parser.add_argument("-restrict_to_individuals", help="filter to individuals")
+    parser.add_argument("-restrict_to_genes", help="filter to genes")
     parser.add_argument("--mode", help="'bhat' or 'z' (bhat is default)")
     parser.add_argument("-eqtl", help="Run on a GTEX-like eqtl summary stats file")
     parser.add_argument("-sample_size", help="number of samples", type=int)
