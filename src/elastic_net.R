@@ -159,14 +159,14 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
                             nested_cv_fisher_pval=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=rho_zscore, rho_avg_squared=rho_avg_squared, zscore_pval=zscore_pval,
                             cv_rho_avg=cv_rho_avg, cv_rho_se=cv_rho_se, cv_rho_avg_squared=cv_rho_avg_squared, cv_zscore_est=cv_zscore_est, cv_zscore_pval=cv_zscore_pval, cv_pval_est=cv_pval_est)
         } else {
-          w <-  data.frame(weights = numeric(0), feature=character(0), stringsAsFactors=FALSE)
+          w <-  data.frame(weight = numeric(0), feature=character(0), stringsAsFactors=FALSE)
           model_summary <- data.frame(alpha=alpha, n_features=ncol(x), n_features_in_model=0, lambda_min_mse=fit$lambda[best_lam_ind],
                             test_R2_avg=R2_avg, test_R2_sd=R2_sd, cv_R2_avg=cv_R2_avg, cv_R2_sd=cv_R2_sd, in_sample_R2=training_R2,
                             nested_cv_fisher_pval=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=rho_zscore, rho_avg_squared=rho_avg_squared, zscore_pval=zscore_pval,
                             cv_rho_avg=cv_rho_avg, cv_rho_se=cv_rho_se, cv_rho_avg_squared=cv_rho_avg_squared, cv_zscore_est=cv_zscore_est, cv_zscore_pval=cv_zscore_pval, cv_pval_est=cv_pval_est)
         }
       } else {
-        w <-  data.frame(weights = numeric(0), feature=character(0), stringsAsFactors=FALSE)
+        w <-  data.frame(weight = numeric(0), feature=character(0), stringsAsFactors=FALSE)
         model_summary <- list(alpha=alpha, n_features=col(x), n_features_in_model=0,lambda_min_mse=NA,
                         test_R2=R2_avg, test_R2_sd=R2_sd, cv_R2_avg=NA, cv_R2_sd=NA, in_sample_R2=NA,
                         nested_cv_fisher_pval=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=rho_zscore, rho_avg_squared=rho_avg_squared,

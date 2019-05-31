@@ -4,9 +4,15 @@ import sys
 import os
 import logging
 import gzip
+import collections
+
 import numpy
 import pandas
-import collections
+import scipy
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from sklearn.model_selection import KFold
+from sklearn.metrics import r2_score
 
 import pyarrow.parquet as pq
 
@@ -14,9 +20,9 @@ from genomic_tools_lib import Utilities, Logging
 from genomic_tools_lib.data_management import TextFileTools
 from genomic_tools_lib.individual_data import Utilities as StudyUtilities
 from genomic_tools_lib.file_formats import Parquet, Miscellaneous
-from genomic_tools_lib.miscellaneous import matrices, Genomics
+from genomic_tools_lib.miscellaneous import matrices, Genomics, Math
 
-########################################################################################################################
+###############################################################################
 import rpy2.robjects as robjects
 from rpy2.robjects import numpy2ri
 numpy2ri.activate()
@@ -32,7 +38,7 @@ def initialize():
     robjects.r['source'](path)
     train_elastic_net = robjects.r['train_elastic_net']
     set_seed = robjects.r['set_seed']
-########################################################################################################################
+###############################################################################
 
 def _save(d_, features_, features_data_, gene):
     pandas.DataFrame({gene:d_[gene]}).to_csv("y.txt", index=False, sep="\t")
@@ -46,6 +52,99 @@ def get_weights(x_weights, id_whitelist):
     else:
         raise RuntimeError("unsupported weights argument")
     return w
+
+###############################################################################
+
+def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_, x_w=None):
+    x = numpy.array([features_data_[v] for v in features_.id.values])
+    dimnames = robjects.ListVector(
+        [(1, robjects.StrVector(d_["individual"])), (2, robjects.StrVector(features_.id.values))])
+    x = robjects.r["matrix"](robjects.FloatVector(x.flatten()), ncol=features_.shape[0], dimnames=dimnames)
+    y = robjects.FloatVector(d_[data_annotation_.gene_id])
+    res = train_elastic_net_wrapper(y, x, penalty_factor=x_w)  # observation weights, not explanatory variable weight :( , x_weight = x_w)
+    return pandas2ri.ri2py(res[0]), pandas2ri.ri2py(res[1])
+
+###############################################################################
+
+def ols_pred_perf(data, n_folds=10):
+    kf = KFold(n_splits=n_folds, shuffle=True)
+
+    rho_f=[]
+    R2_f=[]
+    zscore_f=[]
+    for train_index, test_index in kf.split(data):
+        train_ = data.iloc[train_index]
+        fold_= smf.ols('y ~ {}'.format(" + ".join([x for x in train_.columns if x !="y"])), data=train_).fit()
+        test_ = data.iloc[test_index]
+        y_predicted = fold_.predict(test_)
+        if numpy.std(y_predicted) != 0:
+            score = r2_score(test_.y, y_predicted)
+            rho = numpy.corrcoef(test_.y, y_predicted)[0,1]
+            zscore = numpy.arctanh(rho)*numpy.sqrt(len(y_predicted) - 3)
+        else:
+            score = 0
+            rho = 0
+            zscore = 0
+        R2_f.append(score)
+        rho_f.append(rho)
+        zscore_f.append(zscore)
+
+    rho_avg = numpy.average(rho_f)
+    zscore_est = numpy.sum(zscore_f)/numpy.sqrt(n_folds)
+    zscore_pval = scipy.stats.norm.sf(zscore_est)
+    d = {"test_R2_avg": [numpy.average(R2_f)], "test_R2_sd": [numpy.std(R2_f)],
+         "rho_avg": [rho_avg], "rho_avg_squared": [rho_avg**2], "rho_se":[numpy.std(rho_f)],
+         "rho_zscore":[zscore_est], "zscore_pval": [zscore_pval], "nested_cv_fisher_pval":[None]}
+    return pandas.DataFrame(d)
+
+def prune(data):
+    if data.shape[1] == 1:
+        return data
+    cor = numpy.corrcoef(data.values.T)
+    discard=set()
+    for i in range(0, cor.shape[0]):
+        for j in range(i, cor.shape[1]):
+            if i==j:
+                continue
+            if i in discard:
+                continue
+            if cor[i][j] >= 0.95:
+                discard.add(j)
+    discard = data.columns[list(discard)].values
+    return data.drop(discard, axis=1)
+
+
+def train_ols(features_data_, features_, d_, data_annotation_, x_w=None):
+    ids=[]
+    data = {}
+    for v in features_.id.values:
+        x = Math.standardize(features_data_[v])
+        if x is not None:
+            data[v] = x
+            ids.append(v)
+    data = pandas.DataFrame(data)
+    data = prune(data)
+    ids = data.columns.values
+    if len(ids) == 0:
+        w = pandas.DataFrame({"feature":[], "weight":[]})
+        s = pandas.DataFrame({"test_R2_avg": [], "test_R2_sd": [],
+         "rho_avg": [], "rho_avg_squared": [], "rho_se":[],
+         "rho_zscore":[], "zscore_pval": [], "nested_cv_fisher_pval":[],
+        "alpha":[], "n_snps_in_window":[], "cv_R2_avg":[], "cv_R2_sd":[], "in_sample_R2":[], "n.snps.in.model":[]})
+        return w,s
+
+    data["y"] = Math.standardize(d_[data_annotation_.gene_id])
+
+    results = smf.ols('y ~ {}'.format(" + ".join(ids)), data=data).fit()
+    weights = results.params[1:].to_frame().reset_index().rename(columns={"index": "feature", 0: "weight"})
+    summary = ols_pred_perf(data, 10)
+    summary = summary.assign(alpha=None, n_snps_in_window=features_.shape[0],
+                           cv_R2_avg=None, cv_R2_sd=None, in_sample_R2=None)
+    summary["n.snps.in.model"] = len(ids)
+    return weights, summary
+
+
+########################################################################################################################
 
 def run(args):
     wp = args.output_prefix + "_weights.txt.gz"
@@ -78,6 +177,9 @@ def run(args):
     logging.info("Loading data annotation")
     data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
     data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
+    if args.gene_whitelist:
+        logging.info("Applying gene whitelist")
+        data_annotation = data_annotation[data_annotation.gene_id.isin(set(args.gene_whitelist))]
     logging.info("Kept %i entries", data_annotation.shape[0])
 
     logging.info("Opening features annotation")
@@ -120,6 +222,7 @@ def run(args):
                           "test_R2_avg", "test_R2_sd", "cv_R2_avg", "cv_R2_sd", "in_sample_R2", "nested_cv_fisher_pval",
                           "rho_avg", "rho_se", "rho_zscore", "pred.perf.R2", "pred.perf.pval", "pred.perf.qval"]
 
+    train = train_elastic_net if args.mode == "elastic_net" else train_ols
 
     with gzip.open(wp, "w") as w:
         w.write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
@@ -148,20 +251,15 @@ def run(args):
                                                    specific_individuals=[x for x in d_["individual"]])
 
                     logging.log(8, "training")
-                    x = numpy.array([features_data_[v] for v in features_.id.values])
-                    dimnames = robjects.ListVector([(1,robjects.StrVector(d_["individual"])), (2,robjects.StrVector(features_.id.values))])
-                    x = robjects.r["matrix"](robjects.FloatVector(x.flatten()), ncol=features_.shape[0], dimnames=dimnames)
-                    y = robjects.FloatVector(d_[data_annotation_.gene_id])
-                    res = train_elastic_net(y, x, penalty_factor=x_w) #observation weights, not explanatory variable weight :( , x_weight = x_w)
 
-                    weights = pandas2ri.ri2py(res[0])
+                    weights, summary = train(features_data_, features_, d_, data_annotation_, x_w)
+
                     if weights.shape[0] == 0:
                         logging.log(9, "no weights, skipping")
                         continue
 
                     # _save(d_, features_, features_data_, data_annotation_.gene_id)
                     # from IPython import embed; embed(); quit()
-
                     logging.log(8, "saving")
                     weights = weights.assign(gene= data_annotation_.gene_id).\
                         merge(features_.rename(columns={"id":"feature", "allele_0":"ref_allele", "allele_1":"eff_allele"}), on="feature").\
@@ -172,7 +270,7 @@ def run(args):
                         weights.loc[weights.rsid == "NA", "rsid"] = weights.loc[weights.rsid == "NA", "varID"]
                     w.write(weights.to_csv(sep="\t", index=False, header=False, na_rep="NA").encode())
 
-                    summary = pandas2ri.ri2py(res[1]).\
+                    summary = summary.\
                         assign(gene=data_annotation_.gene_id, genename=data_annotation_.gene_name, gene_type=data_annotation_.gene_type).\
                         rename(columns={"n_features":"n_snps_in_window", "n_features_in_model":"n.snps.in.model", "zscore_pval":"pred.perf.pval", "rho_avg_squared":"pred.perf.R2"})
                     summary["pred.perf.qval"] = None
@@ -212,6 +310,8 @@ if __name__ == "__main__":
     parser.add_argument("--sub_batch", type =int)
     parser.add_argument("--rsid_whitelist")
     parser.add_argument("--MAX_M", type=int)
+    parser.add_argument("--mode", default="elastic_net", help="'elastic_net' or 'ols'")
+    parser.add_argument("--gene_whitelist", nargs="+", default=None)
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
     args = parser.parse_args()
