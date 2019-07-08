@@ -9,7 +9,7 @@ import collections
 import numpy
 import pandas
 import scipy
-import statsmodels.api as sm
+import math
 import statsmodels.formula.api as smf
 from sklearn.model_selection import KFold
 from sklearn.metrics import r2_score
@@ -55,13 +55,13 @@ def get_weights(x_weights, id_whitelist):
 
 ###############################################################################
 
-def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_, x_w=None):
+def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_, x_w=None, prune=True):
     x = numpy.array([features_data_[v] for v in features_.id.values])
     dimnames = robjects.ListVector(
         [(1, robjects.StrVector(d_["individual"])), (2, robjects.StrVector(features_.id.values))])
     x = robjects.r["matrix"](robjects.FloatVector(x.flatten()), ncol=features_.shape[0], dimnames=dimnames)
     y = robjects.FloatVector(d_[data_annotation_.gene_id])
-    res = train_elastic_net_wrapper(y, x, penalty_factor=x_w)  # observation weights, not explanatory variable weight :( , x_weight = x_w)
+    res = train_elastic_net(y, x, penalty_factor=x_w)  # observation weights, not explanatory variable weight :( , x_weight = x_w)
     return pandas2ri.ri2py(res[0]), pandas2ri.ri2py(res[1])
 
 ###############################################################################
@@ -108,13 +108,13 @@ def prune(data):
                 continue
             if i in discard:
                 continue
-            if cor[i][j] >= 0.95:
+            if math.abs(cor[i][j]) >= 0.95:
                 discard.add(j)
     discard = data.columns[list(discard)].values
     return data.drop(discard, axis=1)
 
 
-def train_ols(features_data_, features_, d_, data_annotation_, x_w=None):
+def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True):
     ids=[]
     data = {}
     for v in features_.id.values:
@@ -123,7 +123,9 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None):
             data[v] = x
             ids.append(v)
     data = pandas.DataFrame(data)
-    data = prune(data)
+
+    if prune:
+        data = prune(data)
     ids = data.columns.values
     if len(ids) == 0:
         w = pandas.DataFrame({"feature":[], "weight":[]})
@@ -222,7 +224,7 @@ def run(args):
                           "test_R2_avg", "test_R2_sd", "cv_R2_avg", "cv_R2_sd", "in_sample_R2", "nested_cv_fisher_pval",
                           "rho_avg", "rho_se", "rho_zscore", "pred.perf.R2", "pred.perf.pval", "pred.perf.qval"]
 
-    train = train_elastic_net if args.mode == "elastic_net" else train_ols
+    train = train_elastic_net_wrapper if args.mode == "elastic_net" else train_ols
 
     with gzip.open(wp, "w") as w:
         w.write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
@@ -252,7 +254,7 @@ def run(args):
 
                     logging.log(8, "training")
 
-                    weights, summary = train(features_data_, features_, d_, data_annotation_, x_w)
+                    weights, summary = train(features_data_, features_, d_, data_annotation_, x_w, not args.dont_prune)
 
                     if weights.shape[0] == 0:
                         logging.log(9, "no weights, skipping")
@@ -312,6 +314,7 @@ if __name__ == "__main__":
     parser.add_argument("--MAX_M", type=int)
     parser.add_argument("--mode", default="elastic_net", help="'elastic_net' or 'ols'")
     parser.add_argument("--gene_whitelist", nargs="+", default=None)
+    parser.add_argument("--dont_prune", action="store_true")
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
     args = parser.parse_args()

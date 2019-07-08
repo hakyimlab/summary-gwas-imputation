@@ -78,12 +78,41 @@ Rscript {script_path} \\
 -nfold 5 \\
 -outdir {outdir} \\
 -seed {seed} \\
--gene_id result > /dev/null
+-gene_id result #> /dev/null
 """.format(run_path=r_, script_path=script_path, seed=seed,
         dosage=_x_path(intermediate_folder, gene), info=_info_path(intermediate_folder, gene),
         expression=_y_folder(intermediate_folder, gene), outdir=_outdir(intermediate_folder, gene))
     with open(_execution_script(intermediate_folder,gene), "w") as s:
         s.write(script)
+
+def setup_output(output_prefix, tissue_names, WEIGHTS_FIELDS, SUMMARY_FIELDS):
+    weights = {}
+    summaries = {}
+    covariances = {}
+    for t in tissue_names:
+        w_ = "{}_{}_weights.txt.gz".format(output_prefix, t)
+        if os.path.exists(w_):
+            logging.info("weights exist! delete them or move them")
+            return
+        weights[t] = gzip.open(w_, "w")
+        weights[t].write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
+
+        summaries[t] = gzip.open("{}_{}_summary.txt.gz".format(output_prefix, t), "w")
+        summaries[t].write(("\t".join(SUMMARY_FIELDS) + "\n").encode())
+
+        covariances[t] = gzip.open("{}_{}_covariance.txt.gz".format(output_prefix, t), "w")
+        covariances[t].write("GENE RSID1 RSID2 VALUE\n".encode())
+    return weights, summaries, covariances
+
+def set_down(weights, summaries, covariances, tissue_names, failed_run):
+    for t in tissue_names:
+        weights[t].close()
+        summaries[t].close()
+        covariances[t].close()
+        if failed_run:
+            os.remove(os.path.realpath(weights[t].name))
+            os.remove(os.path.realpath(summaries[t].name))
+            os.remove(os.path.realpath(covariances[t].name))
 
 ########################################################################################################################
 def run(args):
@@ -105,29 +134,18 @@ def run(args):
     WEIGHTS_FIELDS=["gene", "rsid", "varID", "ref_allele", "eff_allele", "weight"]
     SUMMARY_FIELDS=["gene", "genename", "gene_type", "alpha", "n_snps_in_window", "n.snps.in.model", "rho_avg", "pred.perf.R2", "pred.perf.pval"]
 
-    logging.info("Preparing output")
     Utilities.ensure_requisite_folders(args.output_prefix)
 
-    weights = {}
-    summaries = {}
-    covariances = {}
-    for t in tissue_names:
-        w_ = "{}_{}_weights.txt.gz".format(args.output_prefix, t)
-        if os.path.exists(w_):
-            logging.info("weights exist! delete them or move them")
-            return
-        weights[t] = gzip.open(w_, "w")
-        weights[t].write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
-
-        summaries[t] = gzip.open("{}_{}_summary.txt.gz".format(args.output_prefix, t), "w")
-        summaries[t].write(("\t".join(SUMMARY_FIELDS) + "\n").encode())
-
-        covariances[t] = gzip.open("{}_{}_covariance.txt.gz".format(args.output_prefix, t), "w")
-        covariances[t].write("GENE RSID1 RSID2 VALUE\n".encode())
+    if args.skip_regression:
+        weights, summaries, covariances = None, None, None
+    else:
+        weights, summaries, covariances = setup_output(args.output_prefix, tissue_names, WEIGHTS_FIELDS, SUMMARY_FIELDS)
 
     logging.info("Loading data annotation")
-    data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
+    data_annotation = StudyUtilities._load_gene_annotation(args.data_annotation)
     data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
+    if args.chromosome or (args.sub_batches and args.sub_batch):
+        data_annotation = StudyUtilities._filter_gene_annotation(data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
     logging.info("Kept %i entries", data_annotation.shape[0])
 
     logging.info("Opening features annotation")
@@ -180,6 +198,9 @@ def run(args):
             prepare_ctimp(args.script_path, seed, args.intermediate_folder, data_annotation_, features_, features_data_, d_)
             del(features_data_)
             del(d_)
+            if args.skip_regression:
+                continue
+
             subprocess.call(["bash", _execution_script(args.intermediate_folder, data_annotation_.gene_id)])
 
             w = pandas.read_table(_weights(args.intermediate_folder, data_annotation_.gene_id), sep="\s+")
@@ -230,14 +251,8 @@ def run(args):
         # if not args.keep_intermediate_folder:
         #     shutil.rmtree(args.intermediate_folder)
 
-    for t in tissue_names:
-        weights[t].close()
-        summaries[t].close()
-        covariances[t].close()
-        if failed_run:
-            os.remove(os.path.realpath(weights[t].name))
-            os.remove(os.path.realpath(summaries[t].name))
-            os.remove(os.path.realpath(covariances[t].name))
+    if not args.skip_regression:
+        set_down(weights, summaries, covariances, tissue_names, failed_run)
 
     logging.info("Finished")
 
@@ -261,6 +276,7 @@ if __name__ == "__main__":
     parser.add_argument("--rsid_whitelist")
     parser.add_argument("--keep_intermediate_folder", action="store_true")
     parser.add_argument("--MAX_M", type=int)
+    parser.add_argument("--skip_regression", action="store_true")
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
     args = parser.parse_args()

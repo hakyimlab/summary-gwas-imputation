@@ -35,10 +35,10 @@ def run(args):
         gencode = gencode.rename(columns={x[0]:x[1] for x in args.output_column_map})
         if "gene_version" in gencode and "gene_id" in gencode:
             gencode["gene_id"] = gencode.gene_id+ "." + gencode.gene_version
-            keep = ["chromosome", "start_location", "end_location", "feature_type"]+[x[1] for x in args.output_column_map if x[1] not in {"gene_version"}]
+            keep = ["chromosome", "start_location", "end_location", "feature_type", "strand"]+[x[1] for x in args.output_column_map if x[1] not in {"gene_version"}]
             gencode = gencode[keep]
         else:
-            gencode = gencode[["chromosome", "start_location", "end_location", "feature_type"] + [x[1] for x in
+            gencode = gencode[["chromosome", "start_location", "end_location", "feature_type", "strand"] + [x[1] for x in
                                                                                                   args.output_column_map]]
     logging.info("Saving")
     Utilities.save_dataframe(gencode, args.output)

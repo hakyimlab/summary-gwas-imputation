@@ -32,7 +32,7 @@ class GFTF:
     #some are missing
     TAG = "tag"
 
-def load(path, gene_ids=None, feature_type_whitelist={"gene"}, gene_type_white_list=None, transcript_type_whitelist=None, selected_key_value_pairs=[GFTF.K_GENE_ID, GFTF.K_GENE_NAME], collapse_strand=True):
+def load(path, gene_ids=None, feature_type_whitelist={"gene"}, gene_type_white_list=None, transcript_type_whitelist=None, selected_key_value_pairs=[GFTF.K_GENE_ID, GFTF.K_GENE_NAME], collapse_strand=False):
     results = []
 
     F = GFTF
@@ -61,15 +61,17 @@ def load(path, gene_ids=None, feature_type_whitelist={"gene"}, gene_type_white_l
             gene_type = key_value_pairs[GFTF.K_GENE_TYPE]
             if not gene_type in gene_type_white_list: continue
 
-
-        if not collapse_strand or comps[F.GENOMIC_STRAND] == "+":
-            r = (comps[F.CHROMOSOME], comps[F.N_START_LOCATION], comps[F.N_END_LOCATION], feature_type)
+        if not collapse_strand:
+            r = (comps[F.CHROMOSOME], comps[F.N_START_LOCATION], comps[F.N_END_LOCATION], feature_type, comps[F.GENOMIC_STRAND])
         else:
-            r = (comps[F.CHROMOSOME], comps[F.N_END_LOCATION], comps[F.N_START_LOCATION], feature_type)
+            if comps[F.GENOMIC_STRAND] == "+":
+                r = (comps[F.CHROMOSOME], comps[F.N_START_LOCATION], comps[F.N_END_LOCATION], feature_type, comps[F.GENOMIC_STRAND])
+            else:
+                r = (comps[F.CHROMOSOME], comps[F.N_END_LOCATION], comps[F.N_START_LOCATION], feature_type, comps[F.GENOMIC_STRAND])
 
         r += tuple([key_value_pairs[x] for x in selected_key_value_pairs])
         results.append(r)
 
-    columns = ["chromosome", "start_location", "end_location", "feature_type"]+selected_key_value_pairs
+    columns = ["chromosome", "start_location", "end_location", "feature_type", "strand"]+selected_key_value_pairs
     results = Utilities.to_dataframe(results, columns)
     return results

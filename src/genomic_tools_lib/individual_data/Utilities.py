@@ -16,7 +16,7 @@ def get_gene_to_row(gene_annotation):
 def get_gene_annotation(gene_annotation, gene_to_row, gene_id):
     return gene_annotation.iloc[gene_to_row[gene_id]]
 
-def load_gene_annotation(path, chromosome=None, sub_batches=None, sub_batch=None):
+def _load_gene_annotation(path):
     logging.info("Loading gene annotation")
     g = pandas.read_table(path)
     logging.info("Processing")
@@ -29,11 +29,18 @@ def load_gene_annotation(path, chromosome=None, sub_batches=None, sub_batch=None
     g['chromosome'] = pandas.to_numeric(g['chromosome'], errors='coerce')
     g = g.dropna(subset=['chromosome'])
     g.chromosome = g.chromosome.astype(int)
+    return g
+
+def _filter_gene_annotation(g, chromosome=None, sub_batches=None, sub_batch=None):
     if chromosome:
         g = g.loc[g.chromosome == chromosome]
     if sub_batches is not None and sub_batch is not None:
         g = PandasHelpers.sub_batch(g, sub_batches, sub_batch)
     return g
+
+def load_gene_annotation(path, chromosome=None, sub_batches=None, sub_batch=None):
+    g = _load_gene_annotation(path)
+    return _filter_gene_annotation(g, chromosome, sub_batches, sub_batch)
 
 def trim_variant_metadata_on_gene_annotation(vm_, gene_annotation, window, _log_level_v=logging.INFO, id_column="id"):
     variants=set()

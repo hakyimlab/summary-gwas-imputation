@@ -131,7 +131,7 @@ def _get_metadata(path, index):
         variant = comps[2]
         non_effect = comps[3]
         effect = comps[4]
-        frequency = float(comps[5])
+        frequency = float(comps[5]) if comps[5] != "NA" else numpy.nan
         if chr in index and pos in index[chr]:
             m.append((variant, chr, pos, non_effect, effect, frequency))
     return m
