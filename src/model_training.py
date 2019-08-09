@@ -55,13 +55,18 @@ def get_weights(x_weights, id_whitelist):
 
 ###############################################################################
 
-def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_, x_w=None, prune=True):
+def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, nested_folds=10):
     x = numpy.array([features_data_[v] for v in features_.id.values])
     dimnames = robjects.ListVector(
         [(1, robjects.StrVector(d_["individual"])), (2, robjects.StrVector(features_.id.values))])
     x = robjects.r["matrix"](robjects.FloatVector(x.flatten()), ncol=features_.shape[0], dimnames=dimnames)
     y = robjects.FloatVector(d_[data_annotation_.gene_id])
-    res = train_elastic_net(y, x, penalty_factor=x_w)  # observation weights, not explanatory variable weight :( , x_weight = x_w)
+    nested_folds = robjects.FloatVector([nested_folds])
+    #py2ri chokes on None.
+    if x_w is None:
+        res = train_elastic_net(y, x, n_train_test_folds=nested_folds)
+    else:
+        res = train_elastic_net(y, x, penalty_factor=x_w, n_train_test_folds=nested_folds)  # observation weights, not explanatory variable weight :( , x_weight = x_w)
     return pandas2ri.ri2py(res[0]), pandas2ri.ri2py(res[1])
 
 ###############################################################################
@@ -94,7 +99,7 @@ def ols_pred_perf(data, n_folds=10):
     zscore_pval = scipy.stats.norm.sf(zscore_est)
     d = {"test_R2_avg": [numpy.average(R2_f)], "test_R2_sd": [numpy.std(R2_f)],
          "rho_avg": [rho_avg], "rho_avg_squared": [rho_avg**2], "rho_se":[numpy.std(rho_f)],
-         "rho_zscore":[zscore_est], "zscore_pval": [zscore_pval], "nested_cv_fisher_pval":[None]}
+         "rho_zscore":[zscore_est], "zscore_pval": [zscore_pval], "nested_cv_fisher_pval":[None], "nested_cv_converged":n_folds}
     return pandas.DataFrame(d)
 
 def prune(data):
@@ -114,7 +119,7 @@ def prune(data):
     return data.drop(discard, axis=1)
 
 
-def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True):
+def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, nested_folds=10):
     ids=[]
     data = {}
     for v in features_.id.values:
@@ -139,12 +144,70 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
     results = smf.ols('y ~ {}'.format(" + ".join(ids)), data=data).fit()
     weights = results.params[1:].to_frame().reset_index().rename(columns={"index": "feature", 0: "weight"})
-    summary = ols_pred_perf(data, 10)
+    summary = ols_pred_perf(data, nested_folds)
     summary = summary.assign(alpha=None, n_snps_in_window=features_.shape[0],
                            cv_R2_avg=None, cv_R2_sd=None, in_sample_R2=None)
     summary["n.snps.in.model"] = len(ids)
     return weights, summary
 
+
+########################################################################################################################
+
+def process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, summary_fields, train, postfix=None, nested_folds=10):
+    gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
+    logging.log(8, "loading data")
+    d_ = Parquet._read(data, [data_annotation_.gene_id])
+    features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
+
+    if x_weights is not None:
+        x_w = features_[["id"]].merge(x_weights[x_weights.gene_id == data_annotation_.gene_id], on="id")
+        features_ = features_[features_.id.isin(x_w.id)]
+        x_w = robjects.FloatVector(x_w.w.values)
+    else:
+        x_w = None
+
+    if features_.shape[0] == 0:
+        logging.log(9, "No features available")
+        return
+
+    features_data_ = Parquet._read(features, [x for x in features_.id.values],
+                                   specific_individuals=[x for x in d_["individual"]])
+
+    logging.log(8, "training")
+    weights, summary = train(features_data_, features_, d_, data_annotation_, x_w, not args.dont_prune, nested_folds)
+
+    if weights.shape[0] == 0:
+        logging.log(9, "no weights, skipping")
+        return
+
+    logging.log(8, "saving")
+    weights = weights.assign(gene=data_annotation_.gene_id). \
+        merge(features_.rename(columns={"id": "feature", "allele_0": "ref_allele", "allele_1": "eff_allele"}), on="feature"). \
+        rename(columns={"feature": "varID"}). \
+        assign(gene=gene_id_)
+
+    weights = weights[["gene", "rsid", "varID", "ref_allele", "eff_allele", "weight"]]
+    if args.output_rsids:
+        weights.loc[weights.rsid == "NA", "rsid"] = weights.loc[weights.rsid == "NA", "varID"]
+    w.write(weights.to_csv(sep="\t", index=False, header=False, na_rep="NA").encode())
+
+    summary = summary. \
+        assign(gene=gene_id_, genename=data_annotation_.gene_name,
+               gene_type=data_annotation_.gene_type). \
+        rename(columns={"n_features": "n_snps_in_window", "n_features_in_model": "n.snps.in.model",
+                        "zscore_pval": "pred.perf.pval", "rho_avg_squared": "pred.perf.R2",
+                        "cv_converged":"nested_cv_converged"})
+    summary["pred.perf.qval"] = None
+    summary = summary[summary_fields]
+    s.write(summary.to_csv(sep="\t", index=False, header=False, na_rep="NA").encode())
+
+    var_ids = [x for x in weights.varID.values]
+    cov = numpy.cov([features_data_[k] for k in var_ids], ddof=1)
+    ids = [x for x in weights.rsid.values] if args.output_rsids else var_ids
+    cov = matrices._flatten_matrix_data([(gene_id_, ids, cov)])
+    for cov_ in cov:
+        l = "{} {} {} {}\n".format(cov_[0], cov_[1], cov_[2], cov_[3]).encode()
+        c.write(l)
 
 ########################################################################################################################
 
@@ -221,8 +284,8 @@ def run(args):
 
     WEIGHTS_FIELDS=["gene", "rsid", "varID", "ref_allele", "eff_allele", "weight"]
     SUMMARY_FIELDS=["gene", "genename", "gene_type", "alpha", "n_snps_in_window", "n.snps.in.model",
-                          "test_R2_avg", "test_R2_sd", "cv_R2_avg", "cv_R2_sd", "in_sample_R2", "nested_cv_fisher_pval",
-                          "rho_avg", "rho_se", "rho_zscore", "pred.perf.R2", "pred.perf.pval", "pred.perf.qval"]
+                    "test_R2_avg", "test_R2_sd", "cv_R2_avg", "cv_R2_sd", "in_sample_R2", "nested_cv_fisher_pval",
+                    "nested_cv_converged", "rho_avg", "rho_se", "rho_zscore", "pred.perf.R2", "pred.perf.pval", "pred.perf.qval"]
 
     train = train_elastic_net_wrapper if args.mode == "elastic_net" else train_ols
 
@@ -233,65 +296,16 @@ def run(args):
             with gzip.open(cp, "w") as c:
                 c.write("GENE RSID1 RSID2 VALUE\n".encode())
                 for i,data_annotation_ in enumerate(data_annotation.itertuples()):
-                    logging.log(9, "processing %i:%s", i, data_annotation_.gene_id)
-                    logging.log(8, "loading data")
-                    d_ = Parquet._read(data, [data_annotation_.gene_id])
-                    features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
-
-                    if x_weights is not None:
-                        x_w = features_[["id"]].merge(x_weights[x_weights.gene_id == data_annotation_.gene_id], on="id")
-                        features_ = features_[features_.id.isin(x_w.id)]
-                        x_w = robjects.FloatVector(x_w.w.values)
-                    else:
-                        x_w = None
-
-                    if features_.shape[0] == 0:
-                        logging.log(9, "No features available")
-                        continue
-
-                    features_data_ = Parquet._read(features, [x for x in features_.id.values],
-                                                   specific_individuals=[x for x in d_["individual"]])
-
-                    logging.log(8, "training")
-
-                    weights, summary = train(features_data_, features_, d_, data_annotation_, x_w, not args.dont_prune)
-
-                    if weights.shape[0] == 0:
-                        logging.log(9, "no weights, skipping")
-                        continue
-
-                    # _save(d_, features_, features_data_, data_annotation_.gene_id)
-                    # from IPython import embed; embed(); quit()
-                    logging.log(8, "saving")
-                    weights = weights.assign(gene= data_annotation_.gene_id).\
-                        merge(features_.rename(columns={"id":"feature", "allele_0":"ref_allele", "allele_1":"eff_allele"}), on="feature").\
-                        rename(columns={"feature":"varID"})
-
-                    weights = weights[["gene", "rsid", "varID", "ref_allele", "eff_allele", "weight"]]
-                    if args.output_rsids:
-                        weights.loc[weights.rsid == "NA", "rsid"] = weights.loc[weights.rsid == "NA", "varID"]
-                    w.write(weights.to_csv(sep="\t", index=False, header=False, na_rep="NA").encode())
-
-                    summary = summary.\
-                        assign(gene=data_annotation_.gene_id, genename=data_annotation_.gene_name, gene_type=data_annotation_.gene_type).\
-                        rename(columns={"n_features":"n_snps_in_window", "n_features_in_model":"n.snps.in.model", "zscore_pval":"pred.perf.pval", "rho_avg_squared":"pred.perf.R2"})
-                    summary["pred.perf.qval"] = None
-                    summary = summary[SUMMARY_FIELDS]
-                    s.write(summary.to_csv(sep="\t", index=False, header=False, na_rep="NA").encode())
-
-                    var_ids = [x for x in weights.varID.values]
-                    cov = numpy.cov([features_data_[k] for k in var_ids], ddof=1)
-                    ids = [x for x in weights.rsid.values] if args.output_rsids else var_ids
-                    cov = matrices._flatten_matrix_data([(data_annotation_.gene_id, ids, cov)])
-                    for cov_ in cov:
-                        l = "{} {} {} {}\n".format(cov_[0], cov_[1], cov_[2], cov_[3]).encode()
-                        c.write(l)
-
-                    write_header=False
-                    
                     if args.MAX_M and  i>=args.MAX_M:
                         logging.info("Early abort")
                         break
+                    logging.log(9, "processing %i/%i:%s", i+1, data_annotation.shape[0], data_annotation_.gene_id)
+                    if args.repeat:
+                        for j in range(0, args.repeat):
+                            logging.log(9, "%i-th reiteration", j)
+                            process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, j, args.nested_cv_folds)
+                    else:
+                        process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, nested_folds=args.nested_cv_folds)
 
     logging.info("Finished")
 
@@ -317,6 +331,8 @@ if __name__ == "__main__":
     parser.add_argument("--dont_prune", action="store_true")
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
+    parser.add_argument("--repeat", default=None, type=int)
+    parser.add_argument("--nested_cv_folds", default=5, type=int)
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony)
 

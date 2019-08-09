@@ -31,11 +31,13 @@ nested_cv_elastic_net_perf <- function(x, y, n_samples, n_train_test_folds, n_k_
   #
   # The mean and standard deviation of R^2 over all folds is then reported, and the p-values
   # are combined using Fisher's method.
+    message(n_train_test_folds)
   R2_folds <- rep(0, n_train_test_folds)
   corr_folds <- rep(0, n_train_test_folds)
   zscore_folds <- rep(0, n_train_test_folds)
   pval_folds <- rep(0, n_train_test_folds)
-  # Outer-loop split into training and test set.
+  converged_folds <- rep(0, n_train_test_folds)
+  # Outer-loop split into training and test set
   train_test_fold_ids <- generate_fold_ids(n_samples, n_folds=n_train_test_folds)
   for (test_fold in 1:n_train_test_folds) {
     train_idxs <- which(train_test_fold_ids != test_fold)
@@ -47,13 +49,21 @@ nested_cv_elastic_net_perf <- function(x, y, n_samples, n_train_test_folds, n_k_
     observation_weights_ <- observation_weights[train_idxs]
     # Inner-loop - split up training set for cross-validation to choose lambda.
     cv_fold_ids <- generate_fold_ids(length(y_train), n_k_folds)
-    y_pred <- tryCatch({
+    res <- tryCatch({
       # Fit model with training data.
       fit <- cv.glmnet(x_train, y_train, nfolds = n_k_folds, alpha = alpha, type.measure='mse', foldid = cv_fold_ids, weights = observation_weights_, penalty.factor = penalty_factor)
+      best_lam_ind <- which.min(fit$cvm)
+      status <-  if (fit$nzero[best_lam_ind] > 0) { "valid" } else { "null_model" }
       # Predict test data using model that had minimal mean-squared error in cross validation.
-      predict(fit, x_test, s = 'lambda.min')},
+      list(y_pred=predict(fit, x_test, s = 'lambda.min'), status=status)
+    },
       # if the elastic-net model did not converge, predict the mean of the y_train (same as all non-intercept coef=0)
-      error = function(cond) { message(cond); rep(mean(y_train), length(y_test)) })
+      error = function(cond) {
+          message(cond);
+          list(y_pred=rep(mean(y_train), length(y_test)), status="error")
+    })
+    y_pred = res$y_pred
+    converged_folds[test_fold] <- res$status == "valid"
     R2_folds[test_fold] <- calc_R2(y_test, y_pred)
     # Get p-value for correlation test between predicted y and actual y.
     # If there was no model, y_pred will have var=0, so cor.test will yield NA.
@@ -73,7 +83,7 @@ nested_cv_elastic_net_perf <- function(x, y, n_samples, n_train_test_folds, n_k_
   zscore_pval <- 2*pnorm(abs(zscore_est), lower.tail = FALSE)
   # Fisher's method for combining p-values: https://en.wikipedia.org/wiki/Fisher%27s_method
   pval_est <- pchisq(-2 * sum(log(pval_folds)), 2*n_train_test_folds, lower.tail = F)
-  list(R2_avg=R2_avg, R2_sd=R2_sd, pval_est=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=zscore_est, rho_avg_squared=rho_avg_squared, zscore_pval=zscore_pval)
+  list(R2_avg=R2_avg, R2_sd=R2_sd, pval_est=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=zscore_est, rho_avg_squared=rho_avg_squared, zscore_pval=zscore_pval, converged=sum(converged_folds))
 }
 
 matrixify_ <- function(x) {
@@ -96,6 +106,7 @@ set_seed <- function(seed = NA) {
 train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.5, observation_weights=NULL, penalty_factor=NULL,  matrixify=FALSE) {
     if (matrixify) {
      x <- matrixify_(x)
+     y <- as.double(unlist(data.frame(y)[1]))
     }
     if (is.null(observation_weights)) {
         observation_weights = rep(1, nrow(x))
@@ -114,6 +125,7 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
     rho_zscore <- perf_measures$rho_zscore
     rho_avg_squared <- perf_measures$rho_avg_squared
     zscore_pval <- perf_measures$zscore_pval
+    cv_converged <- perf_measures$converged
 
     cv_fold_ids <- generate_fold_ids(length(y), n_k_folds)
     fit <- tryCatch(
@@ -157,13 +169,15 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
           model_summary <- data.frame(alpha=alpha, n_features=ncol(x), n_features_in_model=fit$nzero[best_lam_ind], lambda_min_mse=fit$lambda[best_lam_ind],
                             test_R2_avg=R2_avg, test_R2_sd=R2_sd, cv_R2_avg=cv_R2_avg, cv_R2_sd=cv_R2_sd, in_sample_R2=training_R2,
                             nested_cv_fisher_pval=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=rho_zscore, rho_avg_squared=rho_avg_squared, zscore_pval=zscore_pval,
-                            cv_rho_avg=cv_rho_avg, cv_rho_se=cv_rho_se, cv_rho_avg_squared=cv_rho_avg_squared, cv_zscore_est=cv_zscore_est, cv_zscore_pval=cv_zscore_pval, cv_pval_est=cv_pval_est)
+                            cv_rho_avg=cv_rho_avg, cv_rho_se=cv_rho_se, cv_rho_avg_squared=cv_rho_avg_squared, cv_zscore_est=cv_zscore_est, cv_zscore_pval=cv_zscore_pval, cv_pval_est=cv_pval_est,
+                            cv_converged=cv_converged)
         } else {
           w <-  data.frame(weight = numeric(0), feature=character(0), stringsAsFactors=FALSE)
           model_summary <- data.frame(alpha=alpha, n_features=ncol(x), n_features_in_model=0, lambda_min_mse=fit$lambda[best_lam_ind],
                             test_R2_avg=R2_avg, test_R2_sd=R2_sd, cv_R2_avg=cv_R2_avg, cv_R2_sd=cv_R2_sd, in_sample_R2=training_R2,
                             nested_cv_fisher_pval=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=rho_zscore, rho_avg_squared=rho_avg_squared, zscore_pval=zscore_pval,
-                            cv_rho_avg=cv_rho_avg, cv_rho_se=cv_rho_se, cv_rho_avg_squared=cv_rho_avg_squared, cv_zscore_est=cv_zscore_est, cv_zscore_pval=cv_zscore_pval, cv_pval_est=cv_pval_est)
+                            cv_rho_avg=cv_rho_avg, cv_rho_se=cv_rho_se, cv_rho_avg_squared=cv_rho_avg_squared, cv_zscore_est=cv_zscore_est, cv_zscore_pval=cv_zscore_pval, cv_pval_est=cv_pval_est,
+                            cv_converged=cv_converged)
         }
       } else {
         w <-  data.frame(weight = numeric(0), feature=character(0), stringsAsFactors=FALSE)
@@ -171,7 +185,7 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
                         test_R2=R2_avg, test_R2_sd=R2_sd, cv_R2_avg=NA, cv_R2_sd=NA, in_sample_R2=NA,
                         nested_cv_fisher_pval=pval_est, rho_avg=rho_avg, rho_se=rho_se, rho_zscore=rho_zscore, rho_avg_squared=rho_avg_squared,
                         zscore_pval=zscore_pval,
-                        cv_rho_avg=NA, cv_rho_se=NA, cv_rho_avg_squared=NA, cv_score_est=NA, cv_score_pval=NA, cv_pval_est=NA)
+                        cv_rho_avg=NA, cv_rho_se=NA, cv_rho_avg_squared=NA, cv_score_est=NA, cv_score_pval=NA, cv_pval_est=NA, cv_converged=NA)
       }
     return(list(weights=w, summary=model_summary))
 }

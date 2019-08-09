@@ -1,6 +1,6 @@
 import gzip
 import pandas
-import sqlite3
+import numpy
 import logging
 import re
 import os
@@ -38,6 +38,9 @@ def run(args):
     if not "pred.perf.qval" in extra:
         extra["pred.perf.qval"] = None
 
+    if "nested_cv_converged" in extra:
+        extra.nested_cv_converged = extra.nested_cv_converged.astype(numpy.int32)
+
     logging.info("Loading weights")
     weights = _read_2(args.input_prefix, "_weights.txt.gz")
     weights = weights[weights.gene.isin(extra.gene)]
@@ -56,7 +59,8 @@ def run(args):
     cov = args.output_prefix + ".txt.gz"
     with gzip.open(cov, "w") as cov_:
         cov_.write("GENE RSID1 RSID2 VALUE\n".encode())
-        for f in files:
+        for nf,f in enumerate(files):
+            logging.log(9, "file %i/%i: %s", nf, len(files), f)
             with gzip.open(f) as f_:
                 f_.readline()
                 for l in f_:
