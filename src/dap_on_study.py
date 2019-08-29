@@ -27,6 +27,8 @@ def run(args):
     available_genes = context.get_available_genes()
 
     for i,gene in enumerate(available_genes):
+        if args.MAX_M and i==args.MAX_M:
+            break
         _start = timer()
         logging.log(8, "Processing %i/%i:%s", i+1, len(available_genes), gene)
         _stats = RunDAP.run_dap(context, gene)
@@ -38,7 +40,8 @@ def run(args):
     logging.info("Ran DAP in %s seconds" % (str(end - start)))
 
     Utilities.ensure_requisite_folders(args.output_folder)
-    stats_path = os.path.join(args.output_folder, "stats.txt")
+    stats_ = args.stats_name if args.stats_name else "stats.txt"
+    stats_path = os.path.join(args.output_folder, stats_)
     stats = RunDAP.data_frame_from_stats(stats).fillna("NA")
     Utilities.save_dataframe(stats, stats_path)
 
@@ -63,6 +66,8 @@ if __name__ == "__main__":
     parser.add_argument("-sub_batches", help="Split the data into subsets", type=int)
     parser.add_argument("-sub_batch", help="only do this subset", type=int)
     parser.add_argument("--keep_intermediate_folder", help="don't delete the intermediate stuff", action='store_true')
+    parser.add_argument("--MAX_M", help="Run for up o this many genes", type=int, default=None)
+    parser.add_argument("--stats_name", help="name for run stats")
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
 
     args = parser.parse_args()
