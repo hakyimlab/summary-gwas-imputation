@@ -21,8 +21,15 @@ def run(args):
     variants = KeyedDataSource.load_data(args.variant_annotation, "variant_id", "rs_id_dbSNP150_GRCh38p7")
 
     logging.info("Loading data annotation")
-    data_annotation = pandas.read_table(args.data_annotation)
-    data_annotation = data_annotation[["gene_id", "gene_name", "feature_type", "gene_type"]][data_annotation.feature_type == "gene"].drop_duplicates()
+    if len(args.data_annotation) == 1:
+        data_annotation = pandas.read_table(args.data_annotation[0])
+        data_annotation = data_annotation[["gene_id", "gene_name", "feature_type", "gene_type"]][data_annotation.feature_type == "gene"].drop_duplicates()
+    elif len(args.data_annotation) == 2:
+        data_annotation = pandas.read_table(args.data_annotation[0])
+        data_annotation = data_annotation[["gene_id", "gene_name", "feature_type", "gene_type"]][
+        data_annotation.feature_type == args.data_annotation[1]].drop_duplicates()
+    else:
+        raise  RuntimeError("Unsupported annotation length")
 
     logging.info("Loading model_input")
     data = pandas.read_table(args.model_input, usecols=["gene_id", "gene_name", "variant", "weight"])
@@ -56,7 +63,7 @@ def run(args):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser("Build predition model from data")
-    parser.add_argument("-data_annotation")
+    parser.add_argument("-data_annotation", nargs="+")
     parser.add_argument("-variant_annotation")
     parser.add_argument("-model_input")
     parser.add_argument("--model_filter", nargs="+")

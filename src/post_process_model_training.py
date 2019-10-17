@@ -45,29 +45,36 @@ def run(args):
     weights = _read_2(args.input_prefix, "_weights.txt.gz")
     weights = weights[weights.gene.isin(extra.gene)]
 
-    db = args.output_prefix + ".db"
-    logging.info("Saving db")
-    Models.create_model_db(db, extra, weights)
+    if args.output_prefix:
+        logging.info("Saving dbs and covariance")
+        db = args.output_prefix + ".db"
+        logging.info("Saving db")
+        Models.create_model_db(db, extra, weights)
 
-    logging.info("Processing covariances")
-    genes = {x for x in extra.gene}
+        logging.info("Processing covariances")
+        genes = {x for x in extra.gene}
 
-    path_ = os.path.split(args.input_prefix)
-    r = re.compile(path_[1] + "_covariance.txt.gz")
-    files = sorted([x for x in os.listdir(path_[0]) if r.search(x)])
-    files = [os.path.join(path_[0], x) for x in files]
-    cov = args.output_prefix + ".txt.gz"
-    with gzip.open(cov, "w") as cov_:
-        cov_.write("GENE RSID1 RSID2 VALUE\n".encode())
-        for nf,f in enumerate(files):
-            logging.log(9, "file %i/%i: %s", nf, len(files), f)
-            with gzip.open(f) as f_:
-                f_.readline()
-                for l in f_:
-                    gene = l.decode().strip().split()[0]
-                    if not gene in genes:
-                        continue
-                    cov_.write(l)
+        path_ = os.path.split(args.input_prefix)
+        r = re.compile(path_[1] + "_covariance.txt.gz")
+        files = sorted([x for x in os.listdir(path_[0]) if r.search(x)])
+        files = [os.path.join(path_[0], x) for x in files]
+        cov = args.output_prefix + ".txt.gz"
+        with gzip.open(cov, "w") as cov_:
+            cov_.write("GENE RSID1 RSID2 VALUE\n".encode())
+            for nf,f in enumerate(files):
+                logging.log(9, "file %i/%i: %s", nf, len(files), f)
+                with gzip.open(f) as f_:
+                    f_.readline()
+                    for l in f_:
+                        gene = l.decode().strip().split()[0]
+                        if not gene in genes:
+                            continue
+                        cov_.write(l)
+
+    if args.output_prefix_text:
+        logging.info("Saving text output")
+        Utilities.save_dataframe(weights, args.output_prefix_text+ "_t_weights.txt")
+        Utilities.save_dataframe(extra, args.output_prefix_text + "_t_extra.txt")
     logging.info("Done")
 
 if __name__ == "__main__":
@@ -75,6 +82,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("Compile model database and covariance from model training output")
     parser.add_argument("-input_prefix")
     parser.add_argument("-output_prefix")
+    parser.add_argument("-output_prefix_text")
     parser.add_argument("-parsimony", type=int, default=logging.INFO)
 
     args = parser.parse_args()

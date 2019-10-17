@@ -136,7 +136,7 @@ def _get_metadata(path, index):
             m.append((variant, chr, pos, non_effect, effect, frequency))
     return m
 
-def get_panel_variants(args, d):
+def get_panel_variants(args, d, keep_rsids=False):
     logging.info("Creating index to attach reference ids")
     index = {}
     for t in d.itertuples():

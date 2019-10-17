@@ -25,12 +25,59 @@ def maybe_create_folder(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
+########################################################################################################################
+
 def file_logic(folder, pattern):
     r = re.compile(pattern)
     f = sorted([x for x in os.listdir(folder) if r.search(x)])
     p_ = [r.search(x).group(1) for x in f]
     p = [os.path.join(folder,x) for x in f]
     return pandas.DataFrame({"name":p_, "path":p, "file":f})
+
+def file_logic_2(folder, pattern, sub_fields, filter=None):
+    r = re.compile(pattern)
+
+    f = os.listdir(folder)
+    if filter is not None:
+        filter = re.compile(filter)
+        f = [x for x in f if filter.search(x)]
+
+    f = sorted([x for x in f if r.search(x)])
+    r, subfield_names, subfield_positions = name_parse_prepare(pattern, sub_fields)
+    values=[]
+    for x in f:
+        values.append((x, os.path.join(folder, x))+name_parse(x, r, subfield_positions))
+    columns = ["file", "path"] + subfield_names
+    values = pandas.DataFrame(values, columns=columns)
+    return values
+
+########################################################################################################################
+
+def name_parse_prepare(name_subfield_regexp, name_subfield):
+    if name_subfield and name_subfield_regexp:
+        r = re.compile(name_subfield_regexp)
+        subfield_names = [x[0] for x in name_subfield]
+        subfield_positions = [int(x[1]) for x in name_subfield]
+    else:
+        r = None
+        subfield_names = None
+        subfield_positions = None
+    return r, subfield_names, subfield_positions
+
+def name_parse(file, subfield_regexp, subfield_positions):
+    if subfield_positions:
+        values = []
+        s_ = subfield_regexp.search(file)
+        for position in subfield_positions:
+            values.append(s_.group(position))
+        values = tuple(values)
+    else:
+        values = None
+    return values
+
+
+def name_parse_argumentize(subfield_names, subfield_positions, values):
+    return {subfield_names[i-1]:values[i-1] for i in subfield_positions}
 
 ########################################################################################################################
 

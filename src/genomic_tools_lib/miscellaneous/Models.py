@@ -1,6 +1,8 @@
 __author__ = "alvaro barbeira"
 import logging
 import sqlite3
+import pandas
+
 def model_indexes(conn):
     cursor = conn.cursor()
     cursor.execute("CREATE INDEX gene_model_summary ON extra (gene)")
@@ -24,3 +26,9 @@ def create_model_db(path, extra, weights):
         weights.to_sql("weights", conn, index=False)
         logging.log(9, "Creating indexes")
         model_indexes(conn)
+
+def read_model(path):
+    with sqlite3.connect(path) as conn:
+        extra = pandas.read_sql_query("select * from extra;", conn)
+        weights = pandas.read_sql_query("select * from weights;", conn)
+    return weights, extra

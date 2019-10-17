@@ -192,7 +192,7 @@ def _read(file, columns=None, skip_individuals=False, to_pandas=False, specific_
     if columns is None:
         columns = file.schema.names
     if not skip_individuals:
-        columns = ["individual"]+columns
+        columns = ["individual"]+[x for x in columns]
     if skip_individuals and specific_individuals is not None:
             raise RuntimeError("Unsupported combination")
     v = file.read(columns=columns)
@@ -200,7 +200,7 @@ def _read(file, columns=None, skip_individuals=False, to_pandas=False, specific_
         v = v.to_pandas()
         if specific_individuals is not None:
             indexes = set(specific_individuals)
-            v = v.loc[v.individuals.isin(indexes)]
+            v = v.loc[v.individual.isin(indexes)]
     else:
         if specific_individuals:
             mask = _individual_mask(v.column(0).to_pylist(), specific_individuals)

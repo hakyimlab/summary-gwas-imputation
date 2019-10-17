@@ -90,17 +90,17 @@ def setup_output(output_prefix, tissue_names, WEIGHTS_FIELDS, SUMMARY_FIELDS):
     summaries = {}
     covariances = {}
     for t in tissue_names:
-        w_ = "{}_{}_weights.txt.gz".format(output_prefix, t)
+        w_ = "{}_{}_t_weights.txt.gz".format(output_prefix, t)
         if os.path.exists(w_):
             logging.info("weights exist! delete them or move them")
             return
         weights[t] = gzip.open(w_, "w")
         weights[t].write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
 
-        summaries[t] = gzip.open("{}_{}_summary.txt.gz".format(output_prefix, t), "w")
+        summaries[t] = gzip.open("{}_{}_t_summary.txt.gz".format(output_prefix, t), "w")
         summaries[t].write(("\t".join(SUMMARY_FIELDS) + "\n").encode())
 
-        covariances[t] = gzip.open("{}_{}_covariance.txt.gz".format(output_prefix, t), "w")
+        covariances[t] = gzip.open("{}_{}_t_covariance.txt.gz".format(output_prefix, t), "w")
         covariances[t].write("GENE RSID1 RSID2 VALUE\n".encode())
     return weights, summaries, covariances
 
@@ -173,7 +173,7 @@ def run(args):
     if args.run_tag:
         d = pandas.DataFrame({"run":[args.run_tag], "cv_seed":[seed]})[["run", "cv_seed"]]
         for t in tissue_names:
-            Utilities.save_dataframe(d, "{}_{}_runs.txt.gz".format(args.output_prefix, t))
+            Utilities.save_dataframe(d, "{}_{}_t_runs.txt.gz".format(args.output_prefix, t))
 
     failed_run=False
     try:
