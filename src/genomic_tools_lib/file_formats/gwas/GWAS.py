@@ -25,8 +25,11 @@ def _ensure_columns(d, input_pvalue_fix=1e-50, enforce_numeric_columns=None):
         d[ZSCORE] = None
         return d
 
-    d[EFFECT_ALLELE] = d[EFFECT_ALLELE].str.upper()
-    d[NON_EFFECT_ALLELE] = d[NON_EFFECT_ALLELE].str.upper()
+    if not EFFECT_ALLELE in d or not NON_EFFECT_ALLELE in d:
+        logging.warning("No allele columns in GWAS! I hope you know what you are doing.")
+    else:
+        d[EFFECT_ALLELE] = d[EFFECT_ALLELE].str.upper()
+        d[NON_EFFECT_ALLELE] = d[NON_EFFECT_ALLELE].str.upper()
 
     if enforce_numeric_columns:
         d = _enforce_numeric_columns(d)

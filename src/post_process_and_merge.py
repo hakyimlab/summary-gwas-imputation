@@ -69,9 +69,17 @@ def run(args):
 
     logging.info("Processing files")
     r = []
+
     for f in logic.itertuples():
         logging.info("Processing %s", f.file)
-        d = pandas.read_table(f.path, header =None, names=get_header_names(args.header_names), sep="\s+")
+        names = get_header_names(args.header_names)
+        if args.separator == ",":
+            d = pandas.read_csv(f.path, header='infer' if not names else None, names=names)
+        elif args.separator is None:
+            d = pandas.read_table(f.path, header='infer' if not names else None, names=get_header_names(args.header_names), sep="\s+")
+        else:
+            raise RuntimeError("Unsupported separator")
+
 
         if args.specific_post_processing == "FAST_ENLOC":
             d = fast_enloc_postprocessing(d, gene_id_map, gene_name_map)
@@ -99,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument("--header_names", help="If files are headerless, specify column names", nargs="+")
     parser.add_argument("--specific_post_processing", help="optional string asking for a fixed processing to be done on each file. "
                                                           "Currently, 'FAST_ENLOC' is supported")
+    parser.add_argument("--separator", help="specific separator for columns")
     parser.add_argument("-output", help="Where to save")
 
 
