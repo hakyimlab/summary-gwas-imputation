@@ -14,7 +14,7 @@ from genomic_tools_lib import Utilities, Logging
 def get_trait_map(path):
     with open(path) as f:
         f = yaml.safe_load(f)
-        name_map = f["ukb_name"]
+        name_map = f["ukb_name"] if "ukb_name" in f else f["name"]
     return name_map
 
 def get_gene_map(path):

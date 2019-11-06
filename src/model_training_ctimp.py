@@ -92,8 +92,7 @@ def setup_output(output_prefix, tissue_names, WEIGHTS_FIELDS, SUMMARY_FIELDS):
     for t in tissue_names:
         w_ = "{}_{}_t_weights.txt.gz".format(output_prefix, t)
         if os.path.exists(w_):
-            logging.info("weights exist! delete them or move them")
-            return
+            raise RuntimeError("weights exist! delete them or move them")
         weights[t] = gzip.open(w_, "w")
         weights[t].write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
 
