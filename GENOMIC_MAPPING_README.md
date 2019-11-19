@@ -26,3 +26,11 @@ but it has been delisted. What to do then, in this cases?
 
 Variant `rs11348115` in UCSC https://www.ncbi.nlm.nih.gov/snp/rs11348115
 is listed as `-/T` (delT) but is displayes as deletion of `TTTTTTTTTTTTTTTT`
+
+# Edge case 3
+
+Many snps have multiple entries in the UCSC file: see for example rs3007516.
+
+# Edge case 4
+
+Both `rs9794226` and `rs11813951` have the same position, and have the same alleles after swapping strands.

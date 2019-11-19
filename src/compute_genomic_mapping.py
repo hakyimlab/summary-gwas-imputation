@@ -40,7 +40,7 @@ class snp_strand_p1_swap_m1(alelle_check):
 ########################################################################################################################
 
 def l_(comps):
-    return "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(*comps).encode()
+    return "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n".format(*comps).encode()
 
 
 def run(args):
@@ -51,9 +51,12 @@ def run(args):
     Utilities.ensure_requisite_folders(args.output)
     Utilities.ensure_requisite_folders(args.discard)
 
-    logging.info("Acquiring liftover")
-    # both pyliftover
-    l = pyliftover.LiftOver(args.liftover) if args.liftover else None
+    if args.liftover:
+        logging.info("Acquiring liftover")
+        l = pyliftover.LiftOver(args.liftover)
+    else:
+        logging.info("Will not perform lift over")
+        l = None
 
     logging.info("Loading snp reference metadata")
     snp_reference_metadata = pandas.read_table(args.snp_reference_metadata)
@@ -70,15 +73,15 @@ def run(args):
     logging.info("Processing db snp file")
     if args.discard:
         discard = gzip.open(args.discard, "w")
-        discard.write(l_(["rsid", "chromosome", "position", "a0", "a1", "strand", "type", "panel_variant_id", "panel_variant_rsid", "swap", "strand_reversal"]))
+        discard.write(l_(["rsid", "chromosome", "position", "a0", "a1", "strand", "type", "panel_variant_id", "panel_variant_rsid", "panel_variant_a0", "panel_variant_a1", "swap", "strand_reversal"]))
 
     allele_re = re.compile("chr\d+_\d+_(.*)_(.*)_b38")
 
     with gzip.open(args.output, "w") as result:
-        result.write(l_(["rsid", "chromosome", "position", "a0", "a1", "strand", "type", "panel_variant_id", "panel_variant_rsid", "swap", "strand_reversal"]))
+        result.write(l_(["rsid", "chromosome", "position", "a0", "a1", "strand", "type", "panel_variant_id", "panel_variant_rsid", "panel_variant_a0", "panel_variant_a1", "swap", "strand_reversal"]))
         with gzip.open(args.db_snp_file) as db_snp:
             db_snp.readline()
-            for line in db_snp:
+            for i,line in enumerate(db_snp):
                 comps = line.decode().strip().split("\t")
 
                 obs_alleles = comps[9].split("/")
@@ -88,12 +91,12 @@ def run(args):
 
                 chr = comps[1]
                 start_0 = comps[2]
-                _new_chromosome, _new_position = gwas_parsing._lift(l, chr, start_0) if l else chr, int(start_0)
+                _new_chromosome, _new_position = gwas_parsing._lift(l, chr, start_0) if l else (chr, int(start_0))
 
                 if _new_chromosome == "NA" or _new_position == "NA":
                     continue
 
-                k = "{}_{}".format(chr, _new_position+1)
+                k = "{}_{}".format(_new_chromosome, _new_position+1)
                 if not k in reference:
                     continue
 
@@ -156,12 +159,11 @@ def run(args):
                     #if "-" in alt_alleles or "-" == ref_allele:
                     #    from IPython import embed; embed(); exit()
 
-                ol = l_([rsid, chr, str(int(start_0) + 1), selected_ref_allele, selected_alt_allele, strand, var_type, panel_variant_id, panel_variant_rsid, swap, strand_reversal])
+                ol = l_([rsid, chr, str(int(start_0) + 1), selected_ref_allele, selected_alt_allele, strand, var_type, panel_variant_id, panel_variant_rsid, panel_ref_allele, panel_alt_allele, swap, strand_reversal])
                 if swap is not None and strand is not None and selected_ref_allele is not None and selected_alt_allele is not None:
                     result.write(ol)
                 else:
                     discard.write(ol)
-
     discard.close()
     logging.info("Done")
 
