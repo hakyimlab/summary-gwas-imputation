@@ -153,6 +153,10 @@ def run(args):
     else:
         features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
 
+    if args.discard_palindromic_snps:
+        logging.info("Discarding palindromic snps")
+        features_metadata = Genomics.discard_gtex_palindromic_variants(features_metadata)
+
     if args.chromosome and args.sub_batches:
         logging.info("Trimming variants")
         features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
@@ -247,13 +251,16 @@ def run(args):
         failed_run=True
     finally:
         pass
-        # if not args.keep_intermediate_folder:
-        #     shutil.rmtree(args.intermediate_folder)
+        # This is wrong but I must thing about what to do
+        #if not args.keep_intermediate_folder:
+        #    shutil.rmtree(args.intermediate_folder)
 
     if not args.skip_regression:
         set_down(weights, summaries, covariances, tissue_names, failed_run)
-
-    logging.info("Finished")
+    if failed_run:
+        logging.info("Errors found")
+    else:
+        logging.info("Finished")
 
 
 if __name__ == "__main__":
@@ -276,6 +283,7 @@ if __name__ == "__main__":
     parser.add_argument("--keep_intermediate_folder", action="store_true")
     parser.add_argument("--MAX_M", type=int)
     parser.add_argument("--skip_regression", action="store_true")
+    parser.add_argument("--discard_palindromic_snps", action="store_true")
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
     args = parser.parse_args()

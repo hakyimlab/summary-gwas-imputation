@@ -17,11 +17,14 @@ to decrease total running time.
 
 Th last step is a simple postprocessing that collects the harmonized GWAS, the imputed variants, and produces a final product.
 
+# PRerequisites
 
 # Other tools
 
-Colocalization analysis via COLOC is supported on harmonized of imputed GWAS.
-
+Colocalization analysis via COLOC is supported on harmonized or imputed GWAS.
+We include a modified copy of COLOC for ease of use (original source at [github](https://github.com/chr1swallace/coloc))
+We include a modified copy of CTIMP for ease of use (original source at [github](https://github.com/yiminghu/CTIMP))
+See their respective licenses at their repositories, or here in `3rd_licenses`)
 
 # Final comments
 

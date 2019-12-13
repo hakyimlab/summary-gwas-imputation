@@ -15,6 +15,9 @@ def skip_na(key, value):
     skip = (not value or value == "NA")
     return skip
 
+def dot_to_na(value):
+    return "NA" if value == "." else value
+
 def load_data(path, key_name, value_name, white_list=None, numeric=False, should_skip=None, value_conversion=None, key_filter=None):
     data = {}
     c_key=None

@@ -253,6 +253,10 @@ def run(args):
     else:
         features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
 
+    if args.discard_palindromic_snps:
+        logging.info("Discarding palindromic snps")
+        features_metadata = Genomics.discard_gtex_palindromic_variants(features_metadata)
+
     if args.chromosome and args.sub_batches:
         logging.info("Trimming variants")
         features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
@@ -333,6 +337,7 @@ if __name__ == "__main__":
     parser.add_argument("-parsimony", default=10, type=int)
     parser.add_argument("--repeat", default=None, type=int)
     parser.add_argument("--nested_cv_folds", default=5, type=int)
+    parser.add_argument("--discard_palindromic_snps", action="store_true")
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony)
 

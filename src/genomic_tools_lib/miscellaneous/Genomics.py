@@ -4,6 +4,9 @@ import pandas
 import gzip
 from . import PandasHelpers
 
+def discard_gtex_palindromic_variants(d):
+    return d[~(d.id.str.contains("_A_T_") | d.id.str.contains("_T_A_") | d.id.str.contains("_C_G_") | d.id.str.contains("_G_C_"))]
+
 def allele_key(d):
     def _a(x):
         if x.effect_allele < x.non_effect_allele:
