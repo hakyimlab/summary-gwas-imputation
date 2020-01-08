@@ -85,7 +85,6 @@ def run(args):
                 comps = line.decode().strip().split("\t")
 
                 obs_alleles = comps[9].split("/")
-
                 if len(obs_alleles) < 2:
                     continue
 
