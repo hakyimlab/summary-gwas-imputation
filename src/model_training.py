@@ -307,7 +307,7 @@ def run(args):
                     if args.repeat:
                         for j in range(0, args.repeat):
                             logging.log(9, "%i-th reiteration", j)
-                            process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, j, args.nested_cv_folds)
+                            process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, j, nested_folds=args.nested_cv_folds)
                     else:
                         process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, nested_folds=args.nested_cv_folds)
 

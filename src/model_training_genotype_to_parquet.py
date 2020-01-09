@@ -37,6 +37,10 @@ def generate_single_backend(args, variant_key):
     dosage_filter = get_filter(args, variant_key)
     genotype, individual_ids = ModelTraining.load_genotype_file(args.input_genotype_file, variant_key, dosage_conversion, dosage_filter)
 
+    if args.simplify_individual_id:
+        logging.info("simplifying individual id")
+        individual_ids = [x.split("_")[0] for x in individual_ids]
+
     logging.info("Saving Genotype")
     path_variant = args.output_prefix + ".variants.parquet"
     Parquet.save_variants(path_variant, genotype, individual_ids)
@@ -52,6 +56,10 @@ def generate_multi_backend(args, variant_key):
     metadata=[]
 
     for genotype, individual_ids in ModelTraining.load_genotype_file_by_chromosome(args.input_genotype_file, variant_key, dosage_conversion, dosage_filter):
+        if args.simplify_individual_id:
+            logging.info("simplifying individual id")
+            individual_ids = [x.split("_")[0] for x in individual_ids]
+
         _m = genotype.get_variants_metadata()
 
         metadata.append(_m)
@@ -110,6 +118,7 @@ if __name__ == "__main__":
     parser.add_argument("--impute_to_mean", help="Impute missing values to the mean", action="store_true", default=False)
     parser.add_argument("-output_prefix", help="Prefix to generate genotype output")
     parser.add_argument("--split_by_chromosome", help="Split the genotype in one file per chromosome", action="store_true")
+    parser.add_argument("--simplify_individual_id", help="Split the genotype in one file per chromosome", action="store_true")
     parser.add_argument("-parsimony", help="Log parsimony level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default="10")
 
     args = parser.parse_args()

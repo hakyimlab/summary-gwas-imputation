@@ -154,9 +154,6 @@ def run(args):
 
                 else:
                     pass
-                    #from IPython import embed; embed(); exit()
-                    #if "-" in alt_alleles or "-" == ref_allele:
-                    #    from IPython import embed; embed(); exit()
 
                 ol = l_([rsid, chr, str(int(start_0) + 1), selected_ref_allele, selected_alt_allele, strand, var_type, panel_variant_id, panel_variant_rsid, panel_ref_allele, panel_alt_allele, swap, strand_reversal])
                 if swap is not None and strand is not None and selected_ref_allele is not None and selected_alt_allele is not None:

@@ -33,7 +33,7 @@ def run(args):
                 _oa.write(_to_al(["chromosome", "position", "id", "allele_0", "allele_1", "allele_1_frequency" , "rsid"]))
                 for i, line in enumerate(geno):
                     comps = line.decode().strip().split()
-                    #from IPython import embed; embed(); exit()
+
                     chr = "chr"+ comps[0]
                     pos = comps[2]
                     ref = comps[3]
