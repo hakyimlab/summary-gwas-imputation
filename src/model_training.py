@@ -5,6 +5,7 @@ import os
 import logging
 import gzip
 import collections
+import re
 
 import numpy
 import pandas
@@ -153,10 +154,10 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
 ########################################################################################################################
 
-def process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, summary_fields, train, postfix=None, nested_folds=10):
+def process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, summary_fields, train, postfix=None, nested_folds=10, use_individuals=None):
     gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
     logging.log(8, "loading data")
-    d_ = Parquet._read(data, [data_annotation_.gene_id])
+    d_ = Parquet._read(data, [data_annotation_.gene_id], specific_individuals=use_individuals)
     features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
 
     if x_weights is not None:
@@ -209,6 +210,15 @@ def process(w, s, c, data, data_annotation_, features, features_metadata, x_weig
         l = "{} {} {} {}\n".format(cov_[0], cov_[1], cov_[2], cov_[3]).encode()
         c.write(l)
 
+def check_missing(args, data, features):
+    m = None
+    if args.missing_individuals:
+        logging.info("Instructed to check for individuals missing from the genotype")
+        p = Parquet._read(data, ["individual"])
+        g = Parquet._read(features, ["individual"])
+        m = [x for x in p["individual"] if x in g["individual"]]
+    return m
+
 ########################################################################################################################
 
 def run(args):
@@ -240,7 +250,7 @@ def run(args):
     available_data = {x for x in data.metadata.schema.names}
 
     logging.info("Loading data annotation")
-    data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
+    data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch, args.simplify_data_annotation)
     data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
     if args.gene_whitelist:
         logging.info("Applying gene whitelist")
@@ -252,6 +262,12 @@ def run(args):
         features_metadata = pq.read_table(args.features_annotation).to_pandas()
     else:
         features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
+
+    if args.output_rsids:
+        if not args.keep_highest_frequency_rsid_entry and features_metadata[(features_metadata.rsid != "NA") & features_metadata.rsid.duplicated()].shape[0]:
+            logging.warning("Several variants map to a same rsid (hint: multiple INDELS?).\n"
+                            "Can't proceed. Consider the using the --keep_highest_frequency_rsid flag, or models will be ill defined.")
+            return
 
     if args.discard_palindromic_snps:
         logging.info("Discarding palindromic snps")
@@ -266,6 +282,21 @@ def run(args):
         whitelist = TextFileTools.load_list(args.rsid_whitelist)
         whitelist = set(whitelist)
         features_metadata = features_metadata[features_metadata.rsid.isin(whitelist)]
+
+    if args.only_rsids:
+        logging.info("discarding non-rsids")
+        features_metadata = StudyUtilities.trim_variant_metadata_to_rsids_only(features_metadata)
+        logging.info("Kept %d", features_metadata.shape[0])
+
+        if args.keep_highest_frequency_rsid_entry and features_metadata[(features_metadata.rsid != "NA") & features_metadata.rsid.duplicated()].shape[0]:
+            logging.info("Keeping only the highest frequency entry for every rsid")
+            k = features_metadata[["rsid", "allele_1_frequency", "id"]]
+            k = k.sort_values(by=["rsid", "allele_1_frequency"], ascending=False)
+            k = k.groupby("rsid").first().reset_index()
+            features_metadata = features_metadata[features_metadata.id.isin(k.id)]
+            logging.info("Kept %d", features_metadata.shape[0])
+        else:
+            logging.info("rsids are unique, no need to restrict to highest frequency entry")
 
     if args.features_weights:
         logging.info("Loading weights")
@@ -293,6 +324,8 @@ def run(args):
 
     train = train_elastic_net_wrapper if args.mode == "elastic_net" else train_ols
 
+    available_individuals = check_missing(args, data, features)
+
     with gzip.open(wp, "w") as w:
         w.write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
         with gzip.open(sp, "w") as s:
@@ -304,15 +337,15 @@ def run(args):
                         logging.info("Early abort")
                         break
                     logging.log(9, "processing %i/%i:%s", i+1, data_annotation.shape[0], data_annotation_.gene_id)
+
                     if args.repeat:
                         for j in range(0, args.repeat):
                             logging.log(9, "%i-th reiteration", j)
-                            process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, j, nested_folds=args.nested_cv_folds)
+                            process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, j, nested_folds=args.nested_cv_folds, use_individuals=available_individuals)
                     else:
-                        process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, nested_folds=args.nested_cv_folds)
+                        process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, nested_folds=args.nested_cv_folds, use_individuals=available_individuals)
 
     logging.info("Finished")
-
 
 if __name__ == "__main__":
     import argparse
@@ -325,6 +358,9 @@ if __name__ == "__main__":
     parser.add_argument("-window", type = int)
     parser.add_argument("--run_tag")
     parser.add_argument("--output_rsids", action="store_true")
+    parser.add_argument("--only_rsids", action="store_true")
+    parser.add_argument("--keep_highest_frequency_rsid_entry", action="store_true")
+    parser.add_argument("--simplify_data_annotation", action="store_true")
     parser.add_argument("--chromosome", type = int)
     parser.add_argument("--sub_batches", type = int)
     parser.add_argument("--sub_batch", type =int)
@@ -338,6 +374,7 @@ if __name__ == "__main__":
     parser.add_argument("--repeat", default=None, type=int)
     parser.add_argument("--nested_cv_folds", default=5, type=int)
     parser.add_argument("--discard_palindromic_snps", action="store_true")
+    parser.add_argument("--missing_individuals", action="store_true")
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony)
 
