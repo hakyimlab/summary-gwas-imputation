@@ -51,19 +51,23 @@ def run(args):
         with sqlite3.connect(args.model_db) as connection:
             for i,t in enumerate(extra.itertuples()):
                 g_ = t.gene
+                gene_d = {}
                 logging.log(9, "Proccessing %i/%i:%s", i+1, extra.shape[0], g_)
                 w = pandas.read_sql("select * from weights where gene = '{}';".format(g_), connection)
-                chr_ = w.varID.values[0].split("_")[0].split("chr")[1]
-                if not n_.search(chr_):
-                    logging.log(9, "Unsupported chromosome: %s", chr_)
-                    continue
-                dosage = file_map[int(chr_)]
+                w['chr'] = [x[0] for x in w['varID'].str.split("_")]
+                w['chr'] = w['chr'].str.lstrip('chr')
+                chr_lst = list(w['chr'].unique())
+                for chr_ in chr_lst:
+                    if not n_.search(chr_):
+                        logging.log(9, "Unsupported chromosome: %s", chr_)
+                        continue
+                    dosage = file_map[int(chr_)]
 
-                if individuals:
-                    d = Parquet._read(dosage, columns=w.varID.values, specific_individuals=individuals)
-                    del d["individual"]
-                else:
-                    d = Parquet._read(dosage, columns=w.varID.values, skip_individuals=True)
+                    if individuals:
+                        gene_d.update(Parquet._read(dosage, columns=w.varID.values, specific_individuals=individuals))
+                        del gene_d["individual"]
+                    else:
+                        gene_d.update(Parquet._read(dosage, columns=w.varID.values, skip_individuals=True))
 
                 var_ids = list(d.keys())
                 if len(var_ids) == 0:
@@ -72,6 +76,7 @@ def run(args):
                         d = {w.varID.values[0]:[0,1]}
                     else:
                         logging.log(9, "No genotype available for %s, skipping",g_)
+                        logging.log('Could not find {}'.format(w.varID.values[:5]))
                         next
 
                 if args.output_rsids:
@@ -80,7 +85,7 @@ def run(args):
                     ids = var_ids
 
                 c = numpy.cov([d[x] for x in var_ids])
-                c = matrices._flatten_matrix_data([(w.gene.values[0], ids, c)])
+                c = matrices._flatten_matrix_data([(g_, ids, c)])
                 for entry in c:
                     l = "{} {} {} {}\n".format(entry[0], entry[1], entry[2], entry[3])
                     f.write(l.encode())
