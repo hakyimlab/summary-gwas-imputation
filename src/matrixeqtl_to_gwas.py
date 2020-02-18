@@ -46,7 +46,7 @@ def load_matrixEQTL_data(fp):
     df = pandas.read_csv(fp, sep="\t", compression='gzip')
     df.index = df['snps']
     df['standard_error'] = df['beta'] / df['statistic']
-    df['zscore'] = #TODO
+    df['zscore'] = df['statistic'] #TODO
     map_dd={'snps': 'panel_variant_id',
             'beta': 'effect_size'}
     df.rename(mapper=map_dd, axis=1, inplace=True)
@@ -82,9 +82,11 @@ def load_parquet_metadata(fp, variants):
     return metad_df
 
 def run(args):
-    if os.path.exists(args.output):
+    if os.path.exists(args.out):
         logging.error("Output exists. Nope.")
         return
+    else:
+        os.mkdir(args.out)
     start = timer()
     logging.info("Beginning GWAS conversion")
     for chr in range(1,23):
@@ -102,8 +104,9 @@ def run(args):
             print("SHOULD HAVE")
             print(GWAS_COLS)
             print("CURRENTLY HAVE")
-            print(list(df_i.columns))
+            print(list(df_i[GWAS_COLS].columns))
 
+            f_i.close()
             break
 
         break
