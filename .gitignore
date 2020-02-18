@@ -36,3 +36,6 @@ __pycache__
 *.log
 
 __exp
+
+# PyCharm
+.idea/
