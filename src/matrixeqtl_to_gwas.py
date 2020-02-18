@@ -79,7 +79,22 @@ def load_parquet_metadata(fp, variants):
                     'allele_1': 'effect_allele',
                     'allele_1_frequency': 'frequency'}
     metad_df.rename(mapper=metad_map_dd, axis=1, inplace=True)
+    l = len(metad_df)
+    metad_df['current_build'] = ['hg19'] * l
+    metad_df['sample_size'] = ['10648'] * l
+    metad_df['imputation_status'] = ['NA'] * l
+    metad_df['n_cases'] = ['NA'] * l
     return metad_df
+
+LINE_STR = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n"
+
+def gwas_writer(f, df):
+    for i in range(len(df)):
+        f.write(LINE_STR.format(*df.iloc[i]).encode())
+    f.close()
+
+
+
 
 def run(args):
     if os.path.exists(args.out):
@@ -100,72 +115,33 @@ def run(args):
         idps = meqtl_df['gene'].unique()
         for i in idps:
             f_i = gwas_file_handler(i, args.out)
-            df_i = meqtl_df.join(metad_df, how = 'left')
-            print("SHOULD HAVE")
-            print(GWAS_COLS)
-            print("CURRENTLY HAVE")
-            print(list(df_i[GWAS_COLS].columns))
-
-            f_i.close()
-            break
-
+            try:
+                df_i = meqtl_df.join(metad_df, how = 'left')[GWAS_COLS]
+                gwas_writer(f_i, df_i)
+            except Exception as e:
+                f_i.close()
+                raise e
+        logging.log(9, "Completed working with chr{}".format(chr))
         break
+    end = timer()
+    logging.log(9, "Finished in %.2f seconds" % (start - end))
+
 
 
 
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser("Convert MatrixEQTL results to individual"
-                                     "trait GWAS")
-    parser.add_argument("-by_region_file",
-                        help="If provided, run imputation grouping by regions. "
-                             "Much faster.")
-    parser.add_argument("-parquet_genotype", help="Parquet Genotype file")
-    parser.add_argument("-parquet_genotype_metadata",
-                        help="Parquet Genotype variant metadata file")
-    parser.add_argument("-gwas_file",
-                        help="GWAS file. For the moment, uniform-formatted "
-                             "hg38-based files are accepted.")
-    parser.add_argument("-window",
-                        help="How far to extend in each direction when "
-                             "searching for variants", type=int, default=0)
-    parser.add_argument("-chromosome", type=int,
-                        help="Work only with one chromosome")
-    parser.add_argument("-output", help="Where to save stuff")
-    parser.add_argument("-cutoff", type=float, default=0,
-                        help="naive cutoff when performing SVD")
-    parser.add_argument("-regularization", type=float, default=0,
-                        help="Ridge-like regularization for matrix inversion")
-    parser.add_argument("-frequency_filter", type=float,
-                        help="Skip variants with frequency (below f) or "
-                             "above (1-f)")
-    parser.add_argument("-sub_batches", help="Split the data into subsets",
-                        type=int)
-    parser.add_argument("-sub_batch", help="only do this subset", type=int)
-    parser.add_argument("-containing", help="only do this subset", type=int)
-    parser.add_argument("--keep_palindromic_imputation",
-                        help="Report imputed values istead of "
-                             "(original+flipped) values for palindromic snps",
-                        action="store_true")
-    parser.add_argument("--use_palindromic_snps",
-                        help="Use palindromic variants when imputing",
-                        action="store_true")
-    parser.add_argument("--standardise_dosages",
-                        help="Standardise dosages before computing "
-                             "(i.e. use correlation matrix)",
-                        action="store_true")
-    parser.add_argument("--cache_variants",
-                        help="Save variants in memory instead of loading every "
-                             "time, when running by variant",
-                        action="store_true")
-    parser.add_argument("-parsimony",
-                        help="Log verbosity level. 1 is everything being "
-                             "logged. 10 is only high level messages, above "
-                             "10 will hardly log anything",
-                        default="10")
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-out', default='/vol/bmd/meliao/data/imageXcan/test/meqtl')
+    parser.add_argument('-matrixeqtl',
+                   default='/vol/bmd/meliao/data/imageXcan/matrixEQTL/2020-02-17_chr-{}_matrixeqtl-out.txt.gz')
+    parser.add_argument('-metadata',
+                   default='/vol/bmd/meliao/data/parquet/parquet/ukb_imp_chr{}_v3.variants_metadata.parquet')
     args = parser.parse_args()
+
+
+
 
     Logging.configure_logging(int(args.parsimony), with_date=True)
 
