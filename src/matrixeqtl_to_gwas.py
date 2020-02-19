@@ -67,7 +67,7 @@ def gwas_file_handler(idp, out_dir):
         return gzip.open(fp, 'a')
     else:
         f = gzip.open(fp, 'w')
-        header = "\t".join(GWAS_COLS)
+        header = "\t".join(GWAS_COLS) + "\n"
         f.write(header.encode())
         return f
 
@@ -84,6 +84,7 @@ def load_parquet_metadata(fp, variants):
     metad_df['sample_size'] = ['10648'] * l
     metad_df['imputation_status'] = ['NA'] * l
     metad_df['n_cases'] = ['NA'] * l
+    metad_df.index = metad_df['variant_id']
     return metad_df
 
 LINE_STR = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n"
@@ -132,9 +133,7 @@ def run(args):
                 f_i.close()
                 logging.error("KEYBOARD INTERRUPT")
                 raise KeyboardInterrupt
-            break
         logging.log(9, "Completed working with chr{}".format(chr))
-        break
     end = timer()
     logging.log(9, "Finished in %.2f seconds" % (end - start))
 
