@@ -3,39 +3,15 @@ import logging
 import gzip
 from timeit import default_timer as timer
 from pyarrow import parquet as pq
-import numpy
 import pandas
-from scipy import stats
 
-from genomic_tools_lib import Logging, Utilities
-from genomic_tools_lib.file_formats import Parquet
-from genomic_tools_lib.summary_imputation import (Utilities as
-                                                  SummaryImputationUtilities,
-                                                  SummaryInputation)
+from genomic_tools_lib import Logging
 
 
 GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome', 'position',
             'effect_allele', 'non_effect_allele', 'current_build', 'frequency',
             'sample_size', 'zscore', 'pvalue', 'effect_size', 'standard_error',
             'imputation_status', 'n_cases']
-
-# rs554008981	chr1_13550_G_A_b38	chr1	13550	A	G	hg38	0.017316017316017316	337199	-0.9334188062121872	0.35060377415469157	NA	NA	imputed	NA
-# rs201055865	chr1_14671_G_C_b38	chr1	14671	C	G	hg38	0.012987012987012988	337199	0.1126679378045526	0.9102938212801959	NA	NA	imputed	NA
-
-
-#METADATA:
-# chromosome: int64
-# position: int64
-# id: string
-# allele_0: string
-# allele_1: string
-# allele_1_frequency: double
-# rsid: string
-
-# FROM MatrixEQTL:
-# snps	gene	statistic	pvalue	FDR	beta
-# chr10_17966561_C_G	IDP_25029	-12.5922081614529	4.25497460326811e-36	2.13088549409115e-28	-0.185387796514418
-# chr10_18221908_T_C	IDP_25029	-12.5579859735497	6.51872918504563e-36	2.13088549409115e-28	-0.180662979423034
 
 def load_matrixEQTL_data(fp):
     """
@@ -93,7 +69,6 @@ def gwas_writer(f, df):
     for i in range(len(df)):
         s = LINE_STR.format(*df.iloc[i])
         if i <= 2:
-            print(s)
         f.write(s.encode())
     f.close()
 
@@ -122,9 +97,7 @@ def run(args):
             try:
                 meqtl_i_df = meqtl_df[meqtl_df['gene']==i]
                 df_i = meqtl_i_df.join(metad_df, how = 'left')
-                print(df_i.columns)
                 df_i = df_i[GWAS_COLS]
-                print(df_i.head())
                 gwas_writer(f_i, df_i)
             except Exception as e:
                 f_i.close()
@@ -144,11 +117,13 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-out', default='/vol/bmd/meliao/data/imageXcan/test/meqtl')
-    parser.add_argument('-matrixeqtl',
-                   default='/vol/bmd/meliao/data/imageXcan/matrixEQTL/2020-02-17_chr-{}_matrixeqtl-out.txt.gz')
-    parser.add_argument('-metadata',
-                   default='/vol/bmd/meliao/data/parquet/parquet/ukb_imp_chr{}_v3.variants_metadata.parquet')
+    parser.add_argument('-out', help="directory for results")
+    parser.add_argument('-matrixeqtl', help="Matrixeqtl filename. Must be able "
+                                            "to be formatted with chromosome "
+                                            "number.")
+    parser.add_argument('-metadata',help="Metadata filename. Must be able "
+                                            "to be formatted with chromosome "
+                                            "number.")
     parser.add_argument('-parsimony', default=9)
     args = parser.parse_args()
 
