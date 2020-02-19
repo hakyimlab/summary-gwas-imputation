@@ -90,7 +90,10 @@ LINE_STR = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n"
 
 def gwas_writer(f, df):
     for i in range(len(df)):
-        f.write(LINE_STR.format(*df.iloc[i]).encode())
+        s = LINE_STR.format(*df.iloc[i])
+        if i <= 2:
+            print(s)
+        f.write(s.encode())
     f.close()
 
 
@@ -116,15 +119,24 @@ def run(args):
         for i in idps:
             f_i = gwas_file_handler(i, args.out)
             try:
-                df_i = meqtl_df.join(metad_df, how = 'left')[GWAS_COLS]
+                meqtl_i_df = meqtl_df[meqtl_df['gene']==i]
+                df_i = meqtl_i_df.join(metad_df, how = 'left')
+                print(df_i.columns)
+                df_i = df_i[GWAS_COLS]
+                print(df_i.head())
                 gwas_writer(f_i, df_i)
             except Exception as e:
                 f_i.close()
                 raise e
+            except KeyboardInterrupt:
+                f_i.close()
+                logging.error("KEYBOARD INTERRUPT")
+                raise KeyboardInterrupt
+            break
         logging.log(9, "Completed working with chr{}".format(chr))
         break
     end = timer()
-    logging.log(9, "Finished in %.2f seconds" % (start - end))
+    logging.log(9, "Finished in %.2f seconds" % (end - start))
 
 
 
@@ -138,6 +150,7 @@ if __name__ == '__main__':
                    default='/vol/bmd/meliao/data/imageXcan/matrixEQTL/2020-02-17_chr-{}_matrixeqtl-out.txt.gz')
     parser.add_argument('-metadata',
                    default='/vol/bmd/meliao/data/parquet/parquet/ukb_imp_chr{}_v3.variants_metadata.parquet')
+    parser.add_argument('-parsimony', default=9)
     args = parser.parse_args()
 
 

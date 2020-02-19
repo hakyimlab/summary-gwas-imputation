@@ -57,6 +57,9 @@ def run(args):
                 w['chr'] = [x[0] for x in w['varID'].str.split("_")]
                 w['chr'] = w['chr'].str.lstrip('chr')
                 chr_lst = list(w['chr'].unique())
+                if len(chr_lst) == 0:
+                    logging.log(9, "No chromosomes found for %s, skipping", g_)
+                    continue
                 for chr_ in chr_lst:
                     if not n_.search(chr_):
                         logging.log(9, "Unsupported chromosome: %s", chr_)
@@ -69,22 +72,22 @@ def run(args):
                     else:
                         gene_d.update(Parquet._read(dosage, columns=w.varID.values, skip_individuals=True))
 
-                var_ids = list(d.keys())
+                var_ids = list(gene_d.keys())
                 if len(var_ids) == 0:
-                    if len(w.varID.values) == 1:
-                        logging.log(9, "workaround for single missing genotype at %s", g_)
-                        d = {w.varID.values[0]:[0,1]}
-                    else:
-                        logging.log(9, "No genotype available for %s, skipping",g_)
-                        logging.log('Could not find {}'.format(w.varID.values[:5]))
-                        next
+               #     if len(w.varID.values) == 1:
+               #         logging.log(9, "workaround for single missing genotype at %s", g_)
+               #         gene_d = {w.varID.values[0]:[0,1]}
+               #     else:
+                    logging.log(9, "No genotype available for %s, skipping",g_)
+                    logging.log('Could not find {}'.format(w.varID.values[:5]))
+                    next
 
                 if args.output_rsids:
                     ids = [x for x in pandas.DataFrame({"varID": var_ids}).merge(w[["varID", "rsid"]], on="varID").rsid.values]
                 else:
                     ids = var_ids
 
-                c = numpy.cov([d[x] for x in var_ids])
+                c = numpy.cov([gene_d[x] for x in var_ids])
                 c = matrices._flatten_matrix_data([(g_, ids, c)])
                 for entry in c:
                     l = "{} {} {} {}\n".format(entry[0], entry[1], entry[2], entry[3])
