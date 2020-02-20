@@ -23,10 +23,21 @@ from genomic_tools_lib.miscellaneous import PandasHelpers
 from genomic_tools_lib.file_formats import Parquet
 from genomic_tools_lib.external_tools.dap import Utilities as DAPUtilities, RunDAP
 
-def load_summary_stats(summary_stats_path):
-    d = pandas.read_table(summary_stats_path, usecols=["gene_id", "variant_id", "slope", "slope_se"])
-    d = d.assign(z = d.slope/d.slope_se).rename(columns={"gene_id":"region_id"})
+def load_summary_stats(summary_stats_path, gene_name=None):
+    if gene_name:
+        d = pandas.read_table(summary_stats_path, usecols=["variant_id",
+                                                           "zscore"])
+        d = d.rename(columns={"zscore":"z"})
+        d["region_id"] = [gene_name] * len(d)
+    else:
+        d = pandas.read_table(summary_stats_path, usecols=["gene_id",
+                                                           "variant_id",
+                                                           "slope",
+                                                           "slope_se"])
+        d = d.assign(z=d.slope / d.slope_se)
+        d = d.rename(columns={"gene_id": "region_id"})
     return d[["region_id", "variant_id", "z"]]
+
 
 def _intermediate_folder(intermediate, region): return os.path.join(intermediate, region.region_id)
 def _stats_path(intermediate, region): return os.path.join(_intermediate_folder(intermediate, region), region.region_id +"_stats.txt")
@@ -115,6 +126,15 @@ def run_dapg(region, features, features_metadata, summary_stats, intermediate_fo
 
     return stats
 
+def _find_gene_name(fp, regexp):
+    if regexp is None:
+        return None
+    else:
+        name_re = re.compile(regexp)
+        s = name_re.search(fp.split('/')[-1])
+        return s.groups(1)[0]
+
+
 def run(args):
     start = timer()
 
@@ -138,8 +158,10 @@ def run(args):
     logging.info("Opening features")
     features = pq.ParquetFile(args.parquet_genotype)
 
-    logging.info("Opening summary stats")
-    summary_stats = load_summary_stats(args.summary_stats)
+    gene_name = _find_gene_name(args.summary_stats, args.name_re)
+    logging.info("Opening summary stats: {}".format(gene_name))
+
+    summary_stats = load_summary_stats(args.summary_stats, gene_name)
     summary_stats = summary_stats[summary_stats.variant_id.isin(features_metadata.id)]
     regions = summary_stats[["region_id"]].drop_duplicates()
 
@@ -172,6 +194,8 @@ if __name__ == "__main__":
     parser.add_argument("-parquet_genotype", help="Parquet Genotype file")
     parser.add_argument("-parquet_genotype_metadata", help="Parquet Genotype variant metadata file")
     parser.add_argument("-summary_stats", help="Summary stats of phenotype being tested")
+    parser.add_argument("-name_re", help="Find the phenotype name from the "
+                                         "summary stats filename.")
     parser.add_argument("-output_folder", help="Where will the model output weights be saved")
     parser.add_argument("-sub_batches", help="Split the data into subsets", type=int)
     parser.add_argument("-sub_batch", help="only do this subset", type=int)

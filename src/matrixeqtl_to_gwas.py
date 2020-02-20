@@ -68,7 +68,6 @@ LINE_STR = "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n"
 def gwas_writer(f, df):
     for i in range(len(df)):
         s = LINE_STR.format(*df.iloc[i])
-        if i <= 2:
         f.write(s.encode())
     f.close()
 
