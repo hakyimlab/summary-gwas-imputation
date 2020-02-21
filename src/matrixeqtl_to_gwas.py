@@ -30,15 +30,31 @@ def load_matrixEQTL_data(fp):
 
 
 
-def gwas_file_handler(idp, out_dir):
+def split_file_handler(idp,  out_dir, chromosome):
     """
 
     :param idp:
     :param out_dir:
     :return:
     """
-    fname = '{}-gwas-results.txt.gz'.format(idp)
+    fname = '{}_chr-{}_gwas-results.txt.gz'.format(idp, chromosome)
     fp = os.path.join(out_dir, fname)
+    return _gwas_file_handler(fp)
+
+
+def together_file_handler(idp,  out_dir, chromosome):
+    """
+
+    :param idp:
+    :param out_dir:
+    :return:
+    """
+    fname = '{}_gwas-results.txt.gz'.format(idp)
+    fp = os.path.join(out_dir, fname)
+    return _gwas_file_handler(fp)
+
+
+def _gwas_file_handler(fp):
     if os.path.isfile(fp):
         return gzip.open(fp, 'a')
     else:
@@ -80,6 +96,10 @@ def run(args):
         return
     else:
         os.mkdir(args.out)
+    if args.split_by_chromosome:
+        file_handler = split_file_handler
+    else:
+        file_handler = together_file_handler
     start = timer()
     logging.info("Beginning GWAS conversion")
     for chr in range(1,23):
@@ -92,7 +112,7 @@ def run(args):
         logging.log(9, "Loaded metadata for chr{}".format(chr))
         idps = meqtl_df['gene'].unique()
         for i in idps:
-            f_i = gwas_file_handler(i, args.out)
+            f_i = file_handler(i, args.out, chr)
             try:
                 meqtl_i_df = meqtl_df[meqtl_df['gene']==i]
                 df_i = meqtl_i_df.join(metad_df, how = 'left')
@@ -117,13 +137,16 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-out', help="directory for results")
-    parser.add_argument('-matrixeqtl', help="Matrixeqtl filename. Must be able "
-                                            "to be formatted with chromosome "
+    parser.add_argument('-matrixeqtl', help="Matrixeqtl filename. Must be able"
+                                            " to be formatted with chromosome "
                                             "number.")
     parser.add_argument('-metadata',help="Metadata filename. Must be able "
                                             "to be formatted with chromosome "
                                             "number.")
     parser.add_argument('-parsimony', default=9)
+    parser.add_argument('-split_by_chromosome', help="Write an individual file"
+                                                     "for each pheno/chromosome"
+                                                     "pair.")
     args = parser.parse_args()
 
 
