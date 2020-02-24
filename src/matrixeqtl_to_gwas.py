@@ -146,7 +146,8 @@ if __name__ == '__main__':
     parser.add_argument('-parsimony', default=9)
     parser.add_argument('-split_by_chromosome', help="Write an individual file"
                                                      "for each pheno/chromosome"
-                                                     "pair.")
+                                                     "pair.",
+                        default=False, action='store_true')
     args = parser.parse_args()
 
 

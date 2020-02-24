@@ -52,7 +52,7 @@ def _render(s):
     return s
 
 def _dap_command(region, intermediate_folder, output_folder, options, dap_command):
-    extra =  " ".join(["-{} {}".format(x[0], x[1]) for x in options]) if len(options) else ""
+    extra =  " ".join(["-{} {}".format(x[0], x[1]) for x in options]) if options else ""
     command = \
 """#!/usr/bin/env bash
     
@@ -138,16 +138,16 @@ def _find_gene_name(fp, regexp):
 def run(args):
     start = timer()
 
-    if os.path.exists(args.output_folder):
-        logging.info("Output folder exists. Nope.")
-        return
-
-    if os.path.exists(args.intermediate_folder):
-        logging.info("Intermediate folder exists. Nope.")
-        return
-
-    os.makedirs(args.intermediate_folder)
-    os.makedirs(args.output_folder)
+#    if os.path.exists(args.output_folder):
+#        logging.info("Output folder exists. Nope.")
+#        return
+#
+#    if os.path.exists(args.intermediate_folder):
+#        logging.info("Intermediate folder exists. Nope.")
+#        return
+#
+#    os.makedirs(args.intermediate_folder)
+#    os.makedirs(args.output_folder)
 
     logging.info("Opening features annotation")
     if not args.chromosome:
