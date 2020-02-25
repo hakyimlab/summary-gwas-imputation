@@ -62,8 +62,7 @@ def _dap_command(region, intermediate_folder, output_folder, options, dap_comman
 {dap} \\
 -d_z {stats} \\
 -d_ld {cor} \\
-{extra} \\
--t 1
+{extra}
 """.format(OUTPUT_DIR=output_folder,
            INTERMEDIATE_DIR=intermediate_folder,
            dap=dap_command,

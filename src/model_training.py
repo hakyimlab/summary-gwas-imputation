@@ -212,40 +212,34 @@ def process(w, s, c, data, data_annotation_, features, features_metadata, x_weig
 ########################################################################################################################
 
 def run(args):
-    wp = args.output_prefix + "_weights.txt.gz"
-    if os.path.exists(wp):
-        logging.info("Weights output exists already, delete it or move it")
-        return
-
-    sp = args.output_prefix + "_summary.txt.gz"
-    if os.path.exists(sp):
-        logging.info("Summary output exists already, delete it or move it")
-        return
-
-    cp = args.output_prefix + "_covariance.txt.gz"
-    if os.path.exists(wp):
-        logging.info("covariance output exists already, delete it or move it")
-        return
-
-    r = args.output_prefix + "_run.txt.gz"
-    if os.path.exists(wp):
-        logging.info("run output exists already, delete it or move it")
-        return
 
     logging.info("Starting")
     Utilities.ensure_requisite_folders(args.output_prefix)
+
+    wp = args.output_prefix + "_weights.txt.gz"
+    sp = args.output_prefix + "_summary.txt.gz"
+    cp = args.output_prefix + "_covariance.txt.gz"
+    r = args.output_prefix + "_run.txt.gz"
+
+    out_files = [wp, sp, cp, r]
+    for i in out_files:
+        Utilities.ensure_no_file(i)
+
 
     logging.info("Opening data")
     data = pq.ParquetFile(args.data)
     available_data = {x for x in data.metadata.schema.names}
 
-    logging.info("Loading data annotation")
-    data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
-    data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
-    if args.gene_whitelist:
-        logging.info("Applying gene whitelist")
-        data_annotation = data_annotation[data_annotation.gene_id.isin(set(args.gene_whitelist))]
-    logging.info("Kept %i entries", data_annotation.shape[0])
+    if args.data_annotation:
+        logging.info("Loading data annotation")
+        data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
+        data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
+        if args.gene_whitelist:
+            logging.info("Applying gene whitelist")
+            data_annotation = data_annotation[data_annotation.gene_id.isin(set(args.gene_whitelist))]
+        logging.info("Kept %i entries", data_annotation.shape[0])
+    else:
+        data_annotation = None
 
     logging.info("Opening features annotation")
     if not args.chromosome:
@@ -253,7 +247,7 @@ def run(args):
     else:
         features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
 
-    if args.chromosome and args.sub_batches:
+    if args.chromosome and args.sub_batches and data_annotation:
         logging.info("Trimming variants")
         features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
 
@@ -271,6 +265,14 @@ def run(args):
         logging.info("Kept %d entries", features_metadata.shape[0])
     else:
         x_weights = None
+
+    if not data_annotation:
+        d_ = pq.ParquetFile(args.data)
+        gene_lst = d_.metadata.schema.names
+        gene_lst.remove('individual')
+        dd = {'gene_name': gene_lst, 'gene_id': gene_lst,
+              'gene_type': ['NA'] * len(gene_lst)}
+        data_annotation = pandas.DataFrame(dd)
 
     logging.info("Opening features")
     features = pq.ParquetFile(args.features)
