@@ -55,6 +55,7 @@ def run(args):
 
     Utilities.ensure_requisite_folders(args.output)
     logging.info("Acquiring files")
+
     logic = Utilities.file_logic_2(args.input_folder, args.input_pattern, args.name_subfield, args.input_filter)
 
     trait_map = None
@@ -80,7 +81,6 @@ def run(args):
         else:
             raise RuntimeError("Unsupported separator")
 
-
         if args.specific_post_processing == "FAST_ENLOC":
             d = fast_enloc_postprocessing(d, gene_id_map, gene_name_map)
         elif args.specific_post_processing:
@@ -90,6 +90,16 @@ def run(args):
         r.append(d)
 
     r = pandas.concat(r)
+    if args.integerize_columns:
+        logging.info("Convrting columns to integer")
+        def integerize_(x):
+            try:
+                return int(x)
+            except:
+                return "NA"
+        for c in args.integerize_columns:
+            r[c] = r[c].apply(integerize_)
+
     logging.info("Saving")
     Utilities.save_dataframe(r, args.output)
 
@@ -108,6 +118,7 @@ if __name__ == "__main__":
     parser.add_argument("--specific_post_processing", help="optional string asking for a fixed processing to be done on each file. "
                                                           "Currently, 'FAST_ENLOC' is supported")
     parser.add_argument("--separator", help="specific separator for columns")
+    parser.add_argument("--integerize_columns", help="forc input columns to have integer values", nargs="+", default=[])
     parser.add_argument("-output", help="Where to save")
 
 

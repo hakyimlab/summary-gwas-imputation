@@ -217,6 +217,7 @@ def check_missing(args, data, features):
         p = Parquet._read(data, ["individual"])
         g = Parquet._read(features, ["individual"])
         m = [x for x in p["individual"] if x in g["individual"]]
+        logging.info("Found %d individuals", len(m))
     return m
 
 ########################################################################################################################
@@ -269,19 +270,37 @@ def run(args):
                             "Can't proceed. Consider the using the --keep_highest_frequency_rsid flag, or models will be ill defined.")
             return
 
-    if args.discard_palindromic_snps:
-        logging.info("Discarding palindromic snps")
-        features_metadata = Genomics.discard_gtex_palindromic_variants(features_metadata)
-
     if args.chromosome and args.sub_batches:
         logging.info("Trimming variants")
         features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
+        logging.info("Kept %d", features_metadata.shape[0])
+
+    if args.variant_call_filter:
+        logging.info("Filtering variants by average call rate")
+        features_metadata = features_metadata[features_metadata.avg_call > args.variant_call_filter]
+        logging.info("Kept %d", features_metadata.shape[0])
+
+    if args.variant_r2_filter:
+        logging.info("Filtering variants by imputation R2")
+        features_metadata = features_metadata[features_metadata.r2 > args.variant_r2_filter]
+        logging.info("Kept %d", features_metadata.shape[0])
+
+    if args.variant_variance_filter:
+        logging.info("Filtering variants by (dosage/2)'s variance")
+        features_metadata = features_metadata[features_metadata["std"]/2 > numpy.sqrt(args.variant_variance_filter)]
+        logging.info("Kept %d", features_metadata.shape[0])
+
+    if args.discard_palindromic_snps:
+        logging.info("Discarding palindromic snps")
+        features_metadata = Genomics.discard_gtex_palindromic_variants(features_metadata)
+        logging.info("Kept %d", features_metadata.shape[0])
 
     if args.rsid_whitelist:
-        logging.info("Filtering features annotation")
+        logging.info("Filtering features annotation for whitelist")
         whitelist = TextFileTools.load_list(args.rsid_whitelist)
         whitelist = set(whitelist)
         features_metadata = features_metadata[features_metadata.rsid.isin(whitelist)]
+        logging.info("Kept %d", features_metadata.shape[0])
 
     if args.only_rsids:
         logging.info("discarding non-rsids")
@@ -291,6 +310,7 @@ def run(args):
         if args.keep_highest_frequency_rsid_entry and features_metadata[(features_metadata.rsid != "NA") & features_metadata.rsid.duplicated()].shape[0]:
             logging.info("Keeping only the highest frequency entry for every rsid")
             k = features_metadata[["rsid", "allele_1_frequency", "id"]]
+            k.loc[k.allele_1_frequency > 0.5, "allele_1_frequency"] = 1 - k.loc[k.allele_1_frequency > 0.5, "allele_1_frequency"]
             k = k.sort_values(by=["rsid", "allele_1_frequency"], ascending=False)
             k = k.groupby("rsid").first().reset_index()
             features_metadata = features_metadata[features_metadata.id.isin(k.id)]
@@ -375,6 +395,9 @@ if __name__ == "__main__":
     parser.add_argument("--nested_cv_folds", default=5, type=int)
     parser.add_argument("--discard_palindromic_snps", action="store_true")
     parser.add_argument("--missing_individuals", action="store_true")
+    parser.add_argument("--variant_variance_filter", type=float)
+    parser.add_argument("--variant_call_filter", type=float)
+    parser.add_argument("--variant_r2_filter", type=float)
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony)
 
