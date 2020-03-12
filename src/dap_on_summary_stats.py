@@ -23,12 +23,18 @@ from genomic_tools_lib.miscellaneous import PandasHelpers
 from genomic_tools_lib.file_formats import Parquet
 from genomic_tools_lib.external_tools.dap import Utilities as DAPUtilities, RunDAP
 
-def load_summary_stats(summary_stats_path, gene_name=None):
-    if gene_name:
+def load_summary_stats(summary_stats_path, gene_name_append=None,
+                       gene_name_search=None):
+    # if gene_name_append is None and gene_name_search is None:
+    #     raise ValueError("gene_name_append or gene_name_search must be set")
+
+    if gene_name_append:
         d = pandas.read_table(summary_stats_path, usecols=["variant_id",
                                                            "zscore"])
         d = d.rename(columns={"zscore":"z"})
         d["region_id"] = [gene_name] * len(d)
+    elif gene_name_search:
+        d = pandas.read_table(summary_stats_path, usecols[])
     else:
         d = pandas.read_table(summary_stats_path, usecols=["gene_id",
                                                            "variant_id",

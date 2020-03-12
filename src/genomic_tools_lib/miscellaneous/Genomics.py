@@ -112,6 +112,12 @@ def entries_for_window(chromosome, window_start, window_end, metadata):
     return m
 
 def entries_for_gene_annotation(annotation, window, metadata):
+    necessary_attrs = ['start', 'end', 'chromosome']
+    for i in necessary_attrs:
+        if not hasattr(annotation, i):
+            logging.warn("Skipping feature selection by region. "
+                         "Missing attr %s", i)
+            return metadata
     min_ = annotation.start - window
     max_ = annotation.end + window
     m = entries_for_window(annotation.chromosome, min_, max_, metadata)
