@@ -266,7 +266,7 @@ def run(args):
     else:
         x_weights = None
 
-    if not data_annotation:
+    if data_annotation is None:
         d_ = pq.ParquetFile(args.data)
         gene_lst = d_.metadata.schema.names
         gene_lst.remove('individual')

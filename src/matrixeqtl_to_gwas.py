@@ -115,7 +115,7 @@ class DataHandler:
         logging.log(9, "Loaded metadata from {}".format(self.metadata_fp))
         return metad_df
 
-    def _load_matrixEQTL(fp):
+    def _load_matrixEQTL(self, fp):
         df = pandas.read_csv(fp, sep="\t")
         df.index = df['snps']
         df['standard_error'] = df['beta'] / df['statistic']
@@ -163,7 +163,7 @@ class FileHandler:
 
 
 def convert_files(data_handler, file_handler):
-    for _, meqtl_data in file_handler.file_name_df.itertuples():
+    for meqtl_data in file_handler.file_name_df.itertuples():
         meqtl_df = data_handler.loader(meqtl_data.input_path)
         meqtl_df = meqtl_df.join(data_handler.metadata_df, how='left')
         data_handler.writer(meqtl_df, meqtl_data.output_path)
@@ -182,7 +182,7 @@ def run(args):
                             args.fname_field)
     d_handler = DataHandler(args.metadata)
 
-    logging.log("Setup is complete. Beginning GWAS conversion.")
+    logging.log(9, "Setup is complete. Beginning GWAS conversion.")
     start = timer()
     convert_files(d_handler, f_handler)
     end = timer()
