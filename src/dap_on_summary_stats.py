@@ -33,8 +33,6 @@ def load_summary_stats(summary_stats_path, gene_name_append=None,
                                                            "zscore"])
         d = d.rename(columns={"zscore":"z"})
         d["region_id"] = [gene_name] * len(d)
-    elif gene_name_search:
-        d = pandas.read_table(summary_stats_path, usecols[])
     else:
         d = pandas.read_table(summary_stats_path, usecols=["gene_id",
                                                            "variant_id",
@@ -143,16 +141,15 @@ def _find_gene_name(fp, regexp):
 def run(args):
     start = timer()
 
-#    if os.path.exists(args.output_folder):
-#        logging.info("Output folder exists. Nope.")
-#        return
-#
-#    if os.path.exists(args.intermediate_folder):
-#        logging.info("Intermediate folder exists. Nope.")
-#        return
-#
-#    os.makedirs(args.intermediate_folder)
-#    os.makedirs(args.output_folder)
+   if os.path.exists(args.output_folder):
+       logging.info("Output folder exists. Nope.")
+       return
+
+   if os.path.exists(args.intermediate_folder):
+       logging.warn("Intermediate folder exists. Nope.")
+
+   os.makedirs(args.intermediate_folder)
+   os.makedirs(args.output_folder)
 
     logging.info("Opening features annotation")
     if not args.chromosome:
@@ -166,7 +163,8 @@ def run(args):
     gene_name = _find_gene_name(args.summary_stats, args.name_re)
     logging.info("Opening summary stats: {}".format(gene_name))
 
-    summary_stats = load_summary_stats(args.summary_stats, gene_name)
+    summary_stats = load_summary_stats(args.summary_stats,
+                                       gene_name_append=gene_name)
     summary_stats = summary_stats[summary_stats.variant_id.isin(features_metadata.id)]
     regions = summary_stats[["region_id"]].drop_duplicates()
 
