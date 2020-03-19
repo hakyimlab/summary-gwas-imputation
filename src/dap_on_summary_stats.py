@@ -12,6 +12,7 @@ import numpy
 import shutil
 import pyarrow as pa
 from pyarrow import parquet as pq
+import time
 
 
 from timeit import default_timer as timer
@@ -23,24 +24,29 @@ from genomic_tools_lib.miscellaneous import PandasHelpers
 from genomic_tools_lib.file_formats import Parquet
 from genomic_tools_lib.external_tools.dap import Utilities as DAPUtilities, RunDAP
 
-def load_summary_stats(summary_stats_path, gene_name_append=None,
-                       gene_name_search=None):
-    # if gene_name_append is None and gene_name_search is None:
-    #     raise ValueError("gene_name_append or gene_name_search must be set")
 
-    if gene_name_append:
+class SummaryStats:
+    def __init__(self, meta_path, gene_name, region_re):
+        self.meta_path = meta_path
+        self.gene_files = self._all_files(meta_path)
+        self.gene_name = gene_name
+        self.region_re = re.compile(region_re)
+
+    def load_summary_stats(self, summary_stats_path, gene_name):
         d = pandas.read_table(summary_stats_path, usecols=["variant_id",
                                                            "zscore"])
         d = d.rename(columns={"zscore":"z"})
         d["region_id"] = [gene_name] * len(d)
-    else:
-        d = pandas.read_table(summary_stats_path, usecols=["gene_id",
-                                                           "variant_id",
-                                                           "slope",
-                                                           "slope_se"])
-        d = d.assign(z=d.slope / d.slope_se)
-        d = d.rename(columns={"gene_id": "region_id"})
-    return d[["region_id", "variant_id", "z"]]
+        return d[["region_id", "variant_id", "z"]]
+
+    def _all_files(self, fp):
+        with open(fp, 'r') as f:
+            s = { i.strip() for i in f.readlines()}
+        return s
+
+    def _find_region_name(self, fp):
+        s = self.region_re.search(fp.split('/')[-1])
+        return s.groups(1)[0]
 
 
 def _intermediate_folder(intermediate, region): return os.path.join(intermediate, region.region_id)
@@ -129,27 +135,56 @@ def run_dapg(region, features, features_metadata, summary_stats, intermediate_fo
 
     return stats
 
-def _find_gene_name(fp, regexp):
-    if regexp is None:
-        return None
+
+
+def _find_gene_name(fp, regex=None):
+    fname = fp.split('/')[-1]
+
+    if regex is None:
+        return fname.split('.')[0]
     else:
-        name_re = re.compile(regexp)
-        s = name_re.search(fp.split('/')[-1])
+        regex = re.compile(regex)
+        s = regex.search(fname)
         return s.groups(1)[0]
+
+def _load(fp, gene_name_col):
+    load_cols = ['variant_id', 'zscore', 'region_id']
+    if gene_name_col:
+        load_cols.append(gene_name_col)
+    d = pandas.read_table(fp, usecols=load_cols)
+    map_dd = {gene_name_col: 'gene_id',
+              'zscore': 'z'}
+    d = d.rename(columns=map_dd)
+    return d
+
+def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
+    if gene_name_re:
+        gene_name = _find_gene_name(fp, gene_name_re)
+
+    d = _load(fp, gene_name_col)
+    if 'gene_id' in d.columns:
+        gene_name = d['gene_id'].iloc[0]
+    else:
+        gene_name = _find_gene_name(fp, gene_name_re)
+        d['gene_id'] = [gene_name] * len(d)
+    logging.info("Opening summary stats: {}".format(gene_name))
+    return d
 
 
 def run(args):
     start = timer()
 
-   if os.path.exists(args.output_folder):
-       logging.info("Output folder exists. Nope.")
-       return
+    if os.path.exists(args.output_folder):
+        logging.info("Output folder exists. Nope.")
+        exit(1)
 
-   if os.path.exists(args.intermediate_folder):
-       logging.warn("Intermediate folder exists. Nope.")
+    os.mkdir(args.output_folder)
 
-   os.makedirs(args.intermediate_folder)
-   os.makedirs(args.output_folder)
+    if os.path.exists(args.intermediate_folder):
+        logging.warn("Intermediate folder exists.")
+        time.sleep(5)
+    else:
+        os.makedirs(args.intermediate_folder)
 
     logging.info("Opening features annotation")
     if not args.chromosome:
@@ -160,11 +195,10 @@ def run(args):
     logging.info("Opening features")
     features = pq.ParquetFile(args.parquet_genotype)
 
-    gene_name = _find_gene_name(args.summary_stats, args.name_re)
-    logging.info("Opening summary stats: {}".format(gene_name))
-
     summary_stats = load_summary_stats(args.summary_stats,
-                                       gene_name_append=gene_name)
+                                       gene_name_re = args.name_re,
+                                       gene_name_col=args.gene_col)
+
     summary_stats = summary_stats[summary_stats.variant_id.isin(features_metadata.id)]
     regions = summary_stats[["region_id"]].drop_duplicates()
 
@@ -199,6 +233,8 @@ if __name__ == "__main__":
     parser.add_argument("-summary_stats", help="Summary stats of phenotype being tested")
     parser.add_argument("-name_re", help="Find the phenotype name from the "
                                          "summary stats filename.")
+    parser.add_argument("-gene_col", help="Column name of gene if stored in the"
+                                          "summary stats.")
     parser.add_argument("-output_folder", help="Where will the model output weights be saved")
     parser.add_argument("-sub_batches", help="Split the data into subsets", type=int)
     parser.add_argument("-sub_batch", help="only do this subset", type=int)
