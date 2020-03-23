@@ -49,6 +49,11 @@ class SummaryStats:
         return s.groups(1)[0]
 
 
+#def _intermediate_folder(intermediate, region):
+#    r = region.region_id
+#    if type(r) == int:
+#        r = 'region-{}'.format(r)
+#    return os.path.join(intermediate, r)
 def _intermediate_folder(intermediate, region): return os.path.join(intermediate, region.region_id)
 def _stats_path(intermediate, region): return os.path.join(_intermediate_folder(intermediate, region), region.region_id +"_stats.txt")
 def _cor_path(intermediate, region): return os.path.join(_intermediate_folder(intermediate, region), region.region_id +"_cor.txt")
@@ -155,6 +160,7 @@ def _load(fp, gene_name_col):
     map_dd = {gene_name_col: 'gene_id',
               'zscore': 'z'}
     d = d.rename(columns=map_dd)
+    d['region_id'] = d['region_id'].astype(str)
     return d
 
 def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
@@ -212,7 +218,9 @@ def run(args):
         stats.append(_stats)
 
     stats_path = os.path.join(args.output_folder, "stats.txt")
+    logging.log(9, "Collecting dap stats")
     stats = RunDAP.data_frame_from_stats(stats).fillna("NA")
+    logging.log(9, "Writing stats to {}".format(stats_path))
     Utilities.save_dataframe(stats, stats_path)
 
     end = timer()
