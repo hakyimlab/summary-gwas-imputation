@@ -3,7 +3,7 @@ __author__ = "alvaro barbeira"
 import logging
 import sys
 
-def configure_logging(level=5, target=sys.stderr, log_file=None, with_date=False):
+def configure_logging(level=5, target=sys.stderr, log_file=None, with_date=True):
     logger = logging.getLogger()
     logger.setLevel(level)
 
