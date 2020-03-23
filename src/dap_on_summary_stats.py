@@ -25,31 +25,35 @@ from genomic_tools_lib.file_formats import Parquet
 from genomic_tools_lib.external_tools.dap import Utilities as DAPUtilities, RunDAP
 
 
-class SummaryStats:
-    def __init__(self, meta_path, gene_name, region_re):
-        self.meta_path = meta_path
-        self.gene_files = self._all_files(meta_path)
-        self.gene_name = gene_name
-        self.region_re = re.compile(region_re)
-
-    def load_summary_stats(self, summary_stats_path, gene_name):
-        d = pandas.read_table(summary_stats_path, usecols=["variant_id",
-                                                           "zscore"])
-        d = d.rename(columns={"zscore":"z"})
-        d["region_id"] = [gene_name] * len(d)
-        return d[["region_id", "variant_id", "z"]]
-
-    def _all_files(self, fp):
-        with open(fp, 'r') as f:
-            s = { i.strip() for i in f.readlines()}
-        return s
-
-    def _find_region_name(self, fp):
-        s = self.region_re.search(fp.split('/')[-1])
-        return s.groups(1)[0]
+# class SummaryStats:
+#     def __init__(self, meta_path, gene_name, region_re):
+#         self.meta_path = meta_path
+#         self.gene_files = self._all_files(meta_path)
+#         self.gene_name = gene_name
+#         self.region_re = re.compile(region_re)
+#
+#     def load_summary_stats(self, summary_stats_path, gene_name):
+#         d = pandas.read_table(summary_stats_path, usecols=["variant_id",
+#                                                            "zscore"])
+#         d = d.rename(columns={"zscore":"z"})
+#         d["region_id"] = [gene_name] * len(d)
+#         return d[["region_id", "variant_id", "z"]]
+#
+#     def _all_files(self, fp):
+#         with open(fp, 'r') as f:
+#             s = { i.strip() for i in f.readlines()}
+#         return s
+#
+#     def _find_region_name(self, fp):
+#         s = self.region_re.search(fp.split('/')[-1])
+#         return s.groups(1)[0]
 
 
 def _intermediate_folder(intermediate, region): return os.path.join(intermediate, region.region_id)
+    # r = region.region_id
+    # if type(r) == int:
+    #     r = 'region-{}'.format(r)
+    # return os.path.join(intermediate, r)
 def _stats_path(intermediate, region): return os.path.join(_intermediate_folder(intermediate, region), region.region_id +"_stats.txt")
 def _cor_path(intermediate, region): return os.path.join(_intermediate_folder(intermediate, region), region.region_id +"_cor.txt")
 def _script_path(intermediate, region): return os.path.join(_intermediate_folder(intermediate, region), region.region_id+".sh")
@@ -155,6 +159,7 @@ def _load(fp, gene_name_col):
     map_dd = {gene_name_col: 'gene_id',
               'zscore': 'z'}
     d = d.rename(columns=map_dd)
+    d['region_id'] = d['region_id'].astype(str)
     return d
 
 def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
@@ -169,7 +174,12 @@ def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
         d['gene_id'] = [gene_name] * len(d)
     logging.info("Opening summary stats: {}".format(gene_name))
     return d
-
+def _test_out(dir):
+    fname = "test_text.txt"
+    content = "Hello world! Printing to {}".format(dir)
+    with open(os.path.join(dir, fname), 'w') as f:
+        f.write(content)
+    logging.log(9, "Tested file output.")
 
 def run(args):
     start = timer()
@@ -181,7 +191,7 @@ def run(args):
     os.mkdir(args.output_folder)
 
     if os.path.exists(args.intermediate_folder):
-        logging.warn("Intermediate folder exists.")
+        logging.warning("Intermediate folder exists.")
         time.sleep(5)
     else:
         os.makedirs(args.intermediate_folder)
@@ -198,6 +208,9 @@ def run(args):
     summary_stats = load_summary_stats(args.summary_stats,
                                        gene_name_re = args.name_re,
                                        gene_name_col=args.gene_col)
+    if args.testing:
+        _test_out(args.output_folder)
+        exit(0)
 
     summary_stats = summary_stats[summary_stats.variant_id.isin(features_metadata.id)]
     regions = summary_stats[["region_id"]].drop_duplicates()
@@ -241,6 +254,7 @@ if __name__ == "__main__":
     parser.add_argument("-chromosome", help="Split the data into subsets", type=int)
     parser.add_argument("--keep_intermediate_folder", help="don't delete the intermediate stuff", action='store_true')
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
+    parser.add_argument("--testing", help="Specify to load files, make sure everything is in place, then exit.")
 
     args = parser.parse_args()
 
