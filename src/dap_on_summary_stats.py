@@ -179,6 +179,7 @@ def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
         d['gene_id'] = [gene_name] * len(d)
     logging.info("Opening summary stats: {}".format(gene_name))
     return d
+
 def _test_out(dir):
     fname = "test_text.txt"
     content = "Hello world! Printing to {}".format(dir)
@@ -243,7 +244,7 @@ def run(args):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser("Generate DAP runs on study")
+    parser = argparse.ArgumentParser("Generate DAP runs on summary statistics")
     parser.add_argument("-dap_command", help="Which gemma command to run")
     parser.add_argument("-frequency_filter", help="If provided, restrict to variants satisfying MAF criteria", type=float)
     parser.add_argument("-options", help="DAP-G command line options", action="append", nargs=2)
@@ -261,7 +262,7 @@ if __name__ == "__main__":
     parser.add_argument("-chromosome", help="Split the data into subsets", type=int)
     parser.add_argument("--keep_intermediate_folder", help="don't delete the intermediate stuff", action='store_true')
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
-    parser.add_argument("--testing", help="Specify to load files, make sure everything is in place, then exit.")
+    parser.add_argument("--testing", help="Specify to load files, make sure everything is in place, then exit.", default=False, action='store_true')
 
     args = parser.parse_args()
 
