@@ -5,12 +5,10 @@ import os
 import logging
 import traceback
 import re
-from collections import namedtuple
 import subprocess
 import pandas
 import numpy
 import shutil
-import pyarrow as pa
 from pyarrow import parquet as pq
 import time
 
@@ -35,6 +33,7 @@ def _script_path(intermediate, region): return os.path.join(_intermediate_folder
 def _output(output, region): return os.path.join(output, region.region_id+".dap.txt")
 
 r_ = re.compile(r"\\\n[\s]+\\\n")
+
 
 def _render(s):
     while r_.search(s):
@@ -64,8 +63,9 @@ def _dap_command(region, intermediate_folder, output_folder, options, dap_comman
 
     return command
 
+
 def _run_dap(region, features, summary_stats, intermediate_folder,
-             output_folder, options, dap_command, pip_filter):
+             output_folder, options, dap_command, snp_f, cluster_f):
     logging.log(9, "fetching and preparing data")
     os.makedirs(_intermediate_folder(intermediate_folder, region))
     s = summary_stats[summary_stats.region_id == region.region_id]
@@ -82,18 +82,19 @@ def _run_dap(region, features, summary_stats, intermediate_folder,
 
     command = _dap_command(region, intermediate_folder, output_folder, options, dap_command)
 
-    logging.log(9, "running")
     script_path = _script_path(intermediate_folder, region)
     with open(script_path, "w") as script:
         script.write(command)
 
-    filtered_snps = _run(script_path, pip_filter)
-    with open(_output(output_folder, region), 'w') as o:
-        o.write("\n".join(filtered_snps))
+    dapg_parser = ParseDapGStream(script, snp_f, cluster_f)
+    logging.log(9, "running")
+    dapg_parser.run()
+    dapg_parser.write(_output(output_folder, region))
     logging.log(9, "Executed dap")
 
+
 def run_dapg(region, features, summary_stats, intermediate_folder,
-             output_folder, options, dap_command, p_f,
+             output_folder, options, dap_command, snp_f, cluster_f,
              keep_intermediate=False):
     """
 
@@ -104,13 +105,14 @@ def run_dapg(region, features, summary_stats, intermediate_folder,
     :param output_folder: String. Place to put results.
     :param options: Options for dap-g
     :param dap_command: Path for dap-g command
-    :param p_f: Function. Filter lines of dap-g output and returns str or None
-    :param keep_intermediate: Boolean
+    :param snp_f: Float.
+    :param cluster_f: Float.
+    :param keep_intermediate: Boolean.
     :return:
     """
     try:
         _run_dap(region, features, summary_stats, intermediate_folder,
-                 output_folder, options, dap_command, p_f)
+                 output_folder, options, dap_command, snp_f, cluster_f)
     except ReportableException as ex:
         status = Utilities.ERROR_REGEXP.sub('_', ex.msg)
         stats = RunDAP._stats(region.region_id, status=status)
@@ -127,28 +129,46 @@ def run_dapg(region, features, summary_stats, intermediate_folder,
                 shutil.rmtree(folder)
 
 
-def _run(script, pip_filter):
-    cmd = ['bash', script]
-    return_lst = []
-    with subprocess.Popen(cmd, stdout=subprocess.PIPE,stderr=subprocess.PIPE) as proc:
-        for line in proc.stdout:
-            s = pip_filter(line.decode('utf-8'))
-            if s:
-                return_lst.append(s)
-    return return_lst
+class ParseDapGStream:
+    def __init__(self, script, snp_filter, cluster_filter):
+        self.cmd = ['bash', script]
+        self.snp_filter = snp_filter
+        self.cluster_filter = cluster_filter
+        self.snp_dd = {}
 
-def _pip_filter(s, val):
-    if s.startswith("(("):
-        ll = s.split()
-        if float(ll[2]) >= val:
-            return "\t".join(ll[1:3])
-        else:
-            return None
-    else:
-        return None
+    def run(self):
+        with subprocess.Popen(self.cmd,
+                              stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE) as proc:
+            for line in proc.stdout:
+                self._parse(line.decode('utf-8'))
 
-def pip_filter(val):
-    return lambda s : _pip_filter(s, val)
+    def _parse(self, s):
+        if s.startswith("(("):
+            ll = s.split()
+            c = int(ll[4])
+            if float(ll[2]) >= self.snp_filter and c != -1:
+                cluster_lst = self.snp_dd.get(c)
+                if cluster_lst is not None:
+                    cluster_lst.append("\t".join(ll[1:3]))
+                else:
+                    self.snp_dd[c] = ["\t".join(ll[1:3])]
+
+        elif s.lstrip.startswith("{"):
+            ll = s.split[:3]
+            c = int(ll[0].lstrip("{").rstrip("}"))
+            c_pip = float(ll[2])
+            if c_pip <= self.cluster_filter:
+                del self.snp_dd[c]
+
+    def write(self, fp):
+        header_str = ["snp", "pip", "cluster"]
+        with open(fp, 'w') as f:
+            f.write("\t".join(header_str) + "\n")
+            for k, v in self.snp_dd.items():
+                for snp_str in v:
+                    f.write(v + "\t" + str(k))
+
 
 def _find_gene_name(fp, regex=None):
     fname = fp.split('/')[-1]
@@ -159,6 +179,7 @@ def _find_gene_name(fp, regex=None):
         regex = re.compile(regex)
         s = regex.search(fname)
         return s.groups(1)[0]
+
 
 def _load(fp, gene_name_col):
     load_cols = ['variant_id', 'zscore', 'region_id']
@@ -171,6 +192,7 @@ def _load(fp, gene_name_col):
     d['region_id'] = d['region_id'].astype(str)
     return d
 
+
 def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
     
     d = _load(fp, gene_name_col)
@@ -182,12 +204,14 @@ def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
     logging.info("Opening summary stats: {}".format(gene_name))
     return d
 
+
 def _test_out(dir):
     fname = "test_text.txt"
     content = "Hello world! Printing to {}".format(dir)
     with open(os.path.join(dir, fname), 'w') as f:
         f.write(content)
     logging.log(9, "Tested file output.")
+
 
 def run(args):
     start = timer()
@@ -231,18 +255,12 @@ def run(args):
     if args.sub_batches is not None and args.sub_batch is not None:
         regions = PandasHelpers.sub_batch(regions, args.sub_batches, args.sub_batch)
 
-    # stats = []
     for i, region in enumerate(regions.itertuples()):
         logging.log(9 , "Region %i/%i:%s", i, regions.shape[0], region.region_id)
         run_dapg(region, features, summary_stats, args.intermediate_folder,
                  args.output_folder, args.options, args.dap_command,
-                 pip_filter(args.pip_filter),
+                 args.snp_filter, args.cluster_filter,
                  not args.keep_intermediate_folder)
-    #     stats.append(_stats)
-    #
-    # stats_path = os.path.join(args.output_folder, "stats.txt")
-    # stats = RunDAP.data_frame_from_stats(stats).fillna("NA")
-    # Utilities.save_dataframe(stats, stats_path)
 
 
     end = timer()
@@ -269,7 +287,10 @@ if __name__ == "__main__":
     parser.add_argument("-sub_batches", help="Split the data into subsets", type=int)
     parser.add_argument("-sub_batch", help="only do this subset", type=int)
     parser.add_argument("-chromosome", help="Split the data into subsets", type=int)
-    parser.add_argument("-pip_filter", help="Keep only the SNPs with PIP "
+    parser.add_argument("-snp_pip", help="Keep only the SNPs with PIP "
+                                            "greater or equal than this.",
+                        type=float)
+    parser.add_argument("-cluster_pip", help="Keep only the clusters with PIP "
                                             "greater or equal than this.",
                         type=float)
     parser.add_argument("--keep_intermediate_folder", help="don't delete the intermediate stuff", action='store_true')
