@@ -6,7 +6,7 @@ import logging
 import traceback
 import re
 from collections import namedtuple
-from subprocess import call
+import subprocess
 import pandas
 import numpy
 import shutil
@@ -64,8 +64,9 @@ def _dap_command(region, intermediate_folder, output_folder, options, dap_comman
 
     return command
 
-def _run_dap(region, features, summary_stats, intermediate_folder, output_folder, options, dap_command):
-    logging.log(9, "fetching and prepatring data")
+def _run_dap(region, features, summary_stats, intermediate_folder,
+             output_folder, options, dap_command, pip_filter):
+    logging.log(9, "fetching and preparing data")
     os.makedirs(_intermediate_folder(intermediate_folder, region))
     s = summary_stats[summary_stats.region_id == region.region_id]
     #m = features_metadata[features_metadata.id.isin(s.variant_id)]
@@ -86,18 +87,30 @@ def _run_dap(region, features, summary_stats, intermediate_folder, output_folder
     with open(script_path, "w") as script:
         script.write(command)
 
-    _o = os.path.join(_intermediate_folder(intermediate_folder, region), "dap.o")
-    _e = os.path.join(_intermediate_folder(intermediate_folder, region), "dap.e")
-    with open(_o, "w") as o:
-        with open(_e, "w") as e:
-            call(["bash", script_path], stderr=e, stdout=o)
-    shutil.move(_o, _output(output_folder, region))
-    logging.log(9, "executed dap")
+    filtered_snps = _run(script_path, pip_filter)
+    with open(_output(output_folder, region), 'w') as o:
+        o.write("\n".join(filtered_snps))
+    logging.log(9, "Executed dap")
 
-def run_dapg(region, features, summary_stats, intermediate_folder, output_folder, options, dap_command, keep_intermediate=False):
-    stats = RunDAP._stats(region.region_id)
+def run_dapg(region, features, summary_stats, intermediate_folder,
+             output_folder, options, dap_command, p_f,
+             keep_intermediate=False):
+    """
+
+    :param region:
+    :param features: ParquetFile (not yet loaded) of genotype
+    :param summary_stats: Pandas DataFrame of summary statistics
+    :param intermediate_folder: String. Place to put intermediate files.
+    :param output_folder: String. Place to put results.
+    :param options: Options for dap-g
+    :param dap_command: Path for dap-g command
+    :param p_f: Function. Filter lines of dap-g output and returns str or None
+    :param keep_intermediate: Boolean
+    :return:
+    """
     try:
-        _run_dap(region, features, summary_stats, intermediate_folder, output_folder, options, dap_command)
+        _run_dap(region, features, summary_stats, intermediate_folder,
+                 output_folder, options, dap_command, p_f)
     except ReportableException as ex:
         status = Utilities.ERROR_REGEXP.sub('_', ex.msg)
         stats = RunDAP._stats(region.region_id, status=status)
@@ -113,9 +126,29 @@ def run_dapg(region, features, summary_stats, intermediate_folder, output_folder
             if os.path.exists(folder):
                 shutil.rmtree(folder)
 
-    # return stats
 
+def _run(script, pip_filter):
+    cmd = ['bash', script]
+    return_lst = []
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE) as proc:
+        for line in proc.stdout:
+            s = pip_filter(line)
+            if s:
+                return_lst.append(s)
+    return return_lst
 
+def _pip_filter(s, val):
+    if s.startswith("(("):
+        ll = s.split()
+        if float(ll[2]) >= val:
+            return "\t".join(ll[1:3])
+        else:
+            return None
+    else:
+        return None
+
+def pip_filter(val):
+    return lambda s : _pip_filter(s, val)
 
 def _find_gene_name(fp, regex=None):
     fname = fp.split('/')[-1]
@@ -139,9 +172,7 @@ def _load(fp, gene_name_col):
     return d
 
 def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
-    if gene_name_re:
-        gene_name = _find_gene_name(fp, gene_name_re)
-
+    
     d = _load(fp, gene_name_col)
     if 'gene_id' in d.columns:
         gene_name = d['gene_id'].iloc[0]
@@ -178,7 +209,9 @@ def run(args):
         features_metadata = pq.read_table(args.parquet_genotype_metadata,
                                           columns=['id']).to_pandas()
     else:
-        features_metadata = pq.ParquetFile(args.parquet_genotype_metadata).read_row_group(args.chromosome-1, columns=['id']).to_pandas()
+        features_metadata = pq.ParquetFile(
+            args.parquet_genotype_metadata).read_row_group(args.chromosome-1,
+                                                           columns=['id']).to_pandas()
 
     logging.info("Opening features")
     features = pq.ParquetFile(args.parquet_genotype)
@@ -201,7 +234,10 @@ def run(args):
     # stats = []
     for i, region in enumerate(regions.itertuples()):
         logging.log(9 , "Region %i/%i:%s", i, regions.shape[0], region.region_id)
-        run_dapg(region, features, summary_stats, args.intermediate_folder, args.output_folder, args.options, args.dap_command, not args.keep_intermediate_folder)
+        run_dapg(region, features, summary_stats, args.intermediate_folder,
+                 args.output_folder, args.options, args.dap_command,
+                 pip_filter(args.pip_filter),
+                 not args.keep_intermediate_folder)
     #     stats.append(_stats)
     #
     # stats_path = os.path.join(args.output_folder, "stats.txt")
@@ -233,6 +269,9 @@ if __name__ == "__main__":
     parser.add_argument("-sub_batches", help="Split the data into subsets", type=int)
     parser.add_argument("-sub_batch", help="only do this subset", type=int)
     parser.add_argument("-chromosome", help="Split the data into subsets", type=int)
+    parser.add_argument("-pip_filter", help="Keep only the SNPs with PIP "
+                                            "greater or equal than this.",
+                        type=float)
     parser.add_argument("--keep_intermediate_folder", help="don't delete the intermediate stuff", action='store_true')
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
     parser.add_argument("--testing", help="Specify to load files, make sure everything is in place, then exit.", default=False, action='store_true')
