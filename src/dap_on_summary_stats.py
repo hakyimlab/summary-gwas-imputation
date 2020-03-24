@@ -88,7 +88,7 @@ def _dap_command(region, intermediate_folder, output_folder, options, dap_comman
 
     return command
 
-def _run_dap(region, features, features_metadata, summary_stats, intermediate_folder, output_folder, options, dap_command):
+def _run_dap(region, features, summary_stats, intermediate_folder, output_folder, options, dap_command):
     logging.log(9, "fetching and prepatring data")
     os.makedirs(_intermediate_folder(intermediate_folder, region))
     s = summary_stats[summary_stats.region_id == region.region_id]
@@ -118,10 +118,10 @@ def _run_dap(region, features, features_metadata, summary_stats, intermediate_fo
     shutil.move(_o, _output(output_folder, region))
     logging.log(9, "executed dap")
 
-def run_dapg(region, features, features_metadata, summary_stats, intermediate_folder, output_folder, options, dap_command, keep_intermediate=False):
+def run_dapg(region, features, summary_stats, intermediate_folder, output_folder, options, dap_command, keep_intermediate=False):
     stats = RunDAP._stats(region.region_id)
     try:
-        _run_dap(region, features, features_metadata, summary_stats, intermediate_folder, output_folder, options, dap_command)
+        _run_dap(region, features, summary_stats, intermediate_folder, output_folder, options, dap_command)
     except ReportableException as ex:
         status = Utilities.ERROR_REGEXP.sub('_', ex.msg)
         stats = RunDAP._stats(region.region_id, status=status)
@@ -137,7 +137,7 @@ def run_dapg(region, features, features_metadata, summary_stats, intermediate_fo
             if os.path.exists(folder):
                 shutil.rmtree(folder)
 
-    return stats
+    # return stats
 
 
 
@@ -198,9 +198,10 @@ def run(args):
 
     logging.info("Opening features annotation")
     if not args.chromosome:
-        features_metadata = pq.read_table(args.parquet_genotype_metadata).to_pandas()
+        features_metadata = pq.read_table(args.parquet_genotype_metadata,
+                                          columns=['id']).to_pandas()
     else:
-        features_metadata = pq.ParquetFile(args.parquet_genotype_metadata).read_row_group(args.chromosome-1).to_pandas()
+        features_metadata = pq.ParquetFile(args.parquet_genotype_metadata).read_row_group(args.chromosome-1, columns=['id']).to_pandas()
 
     logging.info("Opening features")
     features = pq.ParquetFile(args.parquet_genotype)
@@ -215,18 +216,20 @@ def run(args):
     summary_stats = summary_stats[summary_stats.variant_id.isin(features_metadata.id)]
     regions = summary_stats[["region_id"]].drop_duplicates()
 
+    del features_metadata
+
     if args.sub_batches is not None and args.sub_batch is not None:
         regions = PandasHelpers.sub_batch(regions, args.sub_batches, args.sub_batch)
 
-    stats = []
+    # stats = []
     for i, region in enumerate(regions.itertuples()):
         logging.log(9 , "Region %i/%i:%s", i, regions.shape[0], region.region_id)
-        _stats = run_dapg(region, features, features_metadata, summary_stats, args.intermediate_folder, args.output_folder, args.options, args.dap_command, not args.keep_intermediate_folder)
-        stats.append(_stats)
-
-    stats_path = os.path.join(args.output_folder, "stats.txt")
-    stats = RunDAP.data_frame_from_stats(stats).fillna("NA")
-    Utilities.save_dataframe(stats, stats_path)
+        run_dapg(region, features, summary_stats, args.intermediate_folder, args.output_folder, args.options, args.dap_command, not args.keep_intermediate_folder)
+    #     stats.append(_stats)
+    #
+    # stats_path = os.path.join(args.output_folder, "stats.txt")
+    # stats = RunDAP.data_frame_from_stats(stats).fillna("NA")
+    # Utilities.save_dataframe(stats, stats_path)
 
     end = timer()
     logging.info("Ran DAP in %s seconds" % (str(end - start)))
