@@ -130,9 +130,9 @@ def run_dapg(region, features, summary_stats, intermediate_folder,
 def _run(script, pip_filter):
     cmd = ['bash', script]
     return_lst = []
-    with subprocess.Popen(cmd, stdout=subprocess.PIPE) as proc:
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE,stderr=subprocess.PIPE) as proc:
         for line in proc.stdout:
-            s = pip_filter(line)
+            s = pip_filter(line.decode('utf-8'))
             if s:
                 return_lst.append(s)
     return return_lst
