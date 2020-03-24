@@ -24,31 +24,6 @@ from genomic_tools_lib.miscellaneous import PandasHelpers
 from genomic_tools_lib.file_formats import Parquet
 from genomic_tools_lib.external_tools.dap import Utilities as DAPUtilities, RunDAP
 
-
-# class SummaryStats:
-#     def __init__(self, meta_path, gene_name, region_re):
-#         self.meta_path = meta_path
-#         self.gene_files = self._all_files(meta_path)
-#         self.gene_name = gene_name
-#         self.region_re = re.compile(region_re)
-#
-#     def load_summary_stats(self, summary_stats_path, gene_name):
-#         d = pandas.read_table(summary_stats_path, usecols=["variant_id",
-#                                                            "zscore"])
-#         d = d.rename(columns={"zscore":"z"})
-#         d["region_id"] = [gene_name] * len(d)
-#         return d[["region_id", "variant_id", "z"]]
-#
-#     def _all_files(self, fp):
-#         with open(fp, 'r') as f:
-#             s = { i.strip() for i in f.readlines()}
-#         return s
-#
-#     def _find_region_name(self, fp):
-#         s = self.region_re.search(fp.split('/')[-1])
-#         return s.groups(1)[0]
-
-
 def _intermediate_folder(intermediate, region): return os.path.join(intermediate, region.region_id)
     # r = region.region_id
     # if type(r) == int:
@@ -60,6 +35,7 @@ def _script_path(intermediate, region): return os.path.join(_intermediate_folder
 def _output(output, region): return os.path.join(output, region.region_id+".dap.txt")
 
 r_ = re.compile(r"\\\n[\s]+\\\n")
+
 def _render(s):
     while r_.search(s):
         s = r_.sub("\\\n", s) #substitute empty lines on missing values
@@ -174,6 +150,7 @@ def load_summary_stats(fp, gene_name_re=None, gene_name_col=None):
         d['gene_id'] = [gene_name] * len(d)
     logging.info("Opening summary stats: {}".format(gene_name))
     return d
+
 def _test_out(dir):
     fname = "test_text.txt"
     content = "Hello world! Printing to {}".format(dir)
@@ -231,6 +208,7 @@ def run(args):
     # stats = RunDAP.data_frame_from_stats(stats).fillna("NA")
     # Utilities.save_dataframe(stats, stats_path)
 
+
     end = timer()
     logging.info("Ran DAP in %s seconds" % (str(end - start)))
 
@@ -239,7 +217,7 @@ def run(args):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser("Generate DAP runs on study")
+    parser = argparse.ArgumentParser("Generate DAP runs on summary statistics")
     parser.add_argument("-dap_command", help="Which gemma command to run")
     parser.add_argument("-frequency_filter", help="If provided, restrict to variants satisfying MAF criteria", type=float)
     parser.add_argument("-options", help="DAP-G command line options", action="append", nargs=2)
@@ -257,7 +235,7 @@ if __name__ == "__main__":
     parser.add_argument("-chromosome", help="Split the data into subsets", type=int)
     parser.add_argument("--keep_intermediate_folder", help="don't delete the intermediate stuff", action='store_true')
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
-    parser.add_argument("--testing", help="Specify to load files, make sure everything is in place, then exit.")
+    parser.add_argument("--testing", help="Specify to load files, make sure everything is in place, then exit.", default=False, action='store_true')
 
     args = parser.parse_args()
 
