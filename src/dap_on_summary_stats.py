@@ -259,8 +259,7 @@ def run(args):
         logging.log(9 , "Region %i/%i:%s", i, regions.shape[0], region.region_id)
         run_dapg(region, features, summary_stats, args.intermediate_folder,
                  args.output_folder, args.options, args.dap_command,
-                 args.snp_pip, args.cluster_pip,
-                 not args.keep_intermediate_folder)
+                 args.snp_pip, args.cluster_pip, args.keep_intermediate_folder)
 
 
     end = timer()
