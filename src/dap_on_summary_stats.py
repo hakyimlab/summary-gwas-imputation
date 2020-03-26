@@ -86,7 +86,7 @@ def _run_dap(region, features, summary_stats, intermediate_folder,
     with open(script_path, "w") as script:
         script.write(command)
 
-    dapg_parser = ParseDapGStream(script, snp_f, cluster_f)
+    dapg_parser = ParseDapGStream(script_path, snp_f, cluster_f)
     logging.log(9, "running")
     dapg_parser.run()
     dapg_parser.write(_output(output_folder, region))
@@ -137,9 +137,8 @@ class ParseDapGStream:
         self.snp_dd = {}
 
     def run(self):
-        with subprocess.Popen(self.cmd,
-                              stdout=subprocess.PIPE,
-                              stderr=subprocess.PIPE) as proc:
+        logging.log(5, "Running command: {}".format(self.cmd))
+        with subprocess.Popen(self.cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as proc:
             for line in proc.stdout:
                 self._parse(line.decode('utf-8'))
 
@@ -154,12 +153,13 @@ class ParseDapGStream:
                 else:
                     self.snp_dd[c] = ["\t".join(ll[1:3])]
 
-        elif s.lstrip.startswith("{"):
-            ll = s.split[:3]
+        elif s.lstrip().startswith("{"):
+            ll = s.split()[:3]
             c = int(ll[0].lstrip("{").rstrip("}"))
             c_pip = float(ll[2])
             if c_pip <= self.cluster_filter:
-                del self.snp_dd[c]
+                val = self.snp_dd.pop(c, None)
+                del val
 
     def write(self, fp):
         header_str = ["snp", "pip", "cluster"]
@@ -167,7 +167,7 @@ class ParseDapGStream:
             f.write("\t".join(header_str) + "\n")
             for k, v in self.snp_dd.items():
                 for snp_str in v:
-                    f.write(v + "\t" + str(k))
+                    f.write(snp_str + "\t" + str(k) + "\n")
 
 
 def _find_gene_name(fp, regex=None):
@@ -259,8 +259,7 @@ def run(args):
         logging.log(9 , "Region %i/%i:%s", i, regions.shape[0], region.region_id)
         run_dapg(region, features, summary_stats, args.intermediate_folder,
                  args.output_folder, args.options, args.dap_command,
-                 args.snp_filter, args.cluster_filter,
-                 not args.keep_intermediate_folder)
+                 args.snp_pip, args.cluster_pip, args.keep_intermediate_folder)
 
 
     end = timer()
