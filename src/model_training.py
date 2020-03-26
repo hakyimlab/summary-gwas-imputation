@@ -186,14 +186,11 @@ def process(w, s, c, data, data_annotation_, features_handler, features_metadata
     logging.log(8, "loading phenotype data")
     d_ = Parquet._read(data, [data_annotation_.gene_id])
 
+    print(x_weights.head())
     features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
-    print(type(features_))
     print(features_.head())
-    exit(0)
     if x_weights is not None:
-        x_w = features_[["id"]].merge(x_weights[x_weights.gene_id == data_annotation_.gene_id], on="id")
-        features_ = features_[features_.id.isin(x_w.id)]
-        x_w = robjects.FloatVector(x_w.w.values)
+        x_w = robjects.FloatVector(x_weights.w.values)
     else:
         x_w = None
 
@@ -201,6 +198,7 @@ def process(w, s, c, data, data_annotation_, features_handler, features_metadata
         logging.log(9, "No features available")
         return
 
+    features_data_ = features_handler.load_features(features_)
     features_data_ = Parquet._read(features, [x for x in features_.id.values],
                                    specific_individuals=[x for x in d_["individual"]])
 
@@ -283,7 +281,7 @@ class FeaturesHandler:
             for i in self.metadata:
                 df_i = pq.read_table(i).to_pandas()
                 if whitelist is not None:
-                    df_i = df_i[df_i.rsid.isin(whitelist)]
+                    df_i = df_i[df_i.id.isin(whitelist)]
                 df_lst.append(df_i)
             return pandas.concat(df_lst)
 
@@ -361,6 +359,7 @@ def run(args):
     if args.chromosome and args.sub_batches and data_annotation:
         logging.info("Trimming variants")
         features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
+
 
     # if args.rsid_whitelist:
     #     logging.info("Filtering features annotation")

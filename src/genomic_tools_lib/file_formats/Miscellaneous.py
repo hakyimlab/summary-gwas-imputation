@@ -13,4 +13,6 @@ def dapg_signals(file, threshold=None, id_whitelist=None):
 
 
 def dapg_preparsed(file):
-    return pandas.read_table(file)
+    df = pandas.read_table(file)
+    df = df.rename(mapper={'pip':'w'}, axis=1)
+    return df
