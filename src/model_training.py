@@ -45,10 +45,15 @@ def _save(d_, features_, features_data_, gene):
     pandas.DataFrame({gene:d_[gene]}).to_csv("y.txt", index=False, sep="\t")
     pandas.DataFrame(collections.OrderedDict([(v,features_data_[v]) for v in features_.id.values])).to_csv("x.txt", index=False, sep="\t")
 
-def get_weights(x_weights, id_whitelist, pre_parsed=False):
+def get_weights(x_weights, id_whitelist=None, pre_parsed=False):
     if pre_parsed:
-        return Miscellaneous.dapg_preparsed(x_weights)
+        weights_df_lst = []
+        for i in x_weights:
+            weights_df_lst.append(Miscellaneous.dapg_preparsed(i))
+        return pandas.concat(weights_df_lst)
     else:
+        if id_whitelist is None:
+            raise ValueError("Either id_whitelist or pre_parsed must be specified")
         if x_weights[1] == "PIP":
             w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
             w = w.rename(columns={"gene":"gene_id", "pip":"w", "variant_id":"id"})
@@ -158,7 +163,7 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 ########################################################################################################################
 
 def process(w, s, c, data, data_annotation_, features_handler, features_metadata,
-            features, x_weights, summary_fields, train, postfix=None,
+             x_weights, summary_fields, train, postfix=None,
             nested_folds=10):
     """
 
@@ -182,8 +187,9 @@ def process(w, s, c, data, data_annotation_, features_handler, features_metadata
     d_ = Parquet._read(data, [data_annotation_.gene_id])
 
     features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
-    print(type(features))
-    print(features.head())
+    print(type(features_))
+    print(features_.head())
+    exit(0)
     if x_weights is not None:
         x_w = features_[["id"]].merge(x_weights[x_weights.gene_id == data_annotation_.gene_id], on="id")
         features_ = features_[features_.id.isin(x_w.id)]
@@ -332,7 +338,7 @@ def run(args):
         x_weights = None
         whitelist = None
 
-    features_handler = FeaturesHandler(args.featues, args.features_metadata)
+    features_handler = FeaturesHandler(args.features, args.features_annotation)
     features_metadata = features_handler.load_metadata(whitelist=whitelist)
 
     if args.data_annotation:
@@ -374,8 +380,8 @@ def run(args):
               'gene_type': ['NA'] * len(gene_lst)}
         data_annotation = pandas.DataFrame(dd)
 
-    logging.info("Opening features")
-    features = pq.ParquetFile(args.features)
+#    logging.info("Opening features")
+#    features = pq.ParquetFile(args.features)
 
     logging.info("Setting R seed")
     s = numpy.random.randint(1e8)
