@@ -5,6 +5,7 @@ import os
 import logging
 import gzip
 import collections
+import re
 
 import numpy
 import pandas
@@ -44,14 +45,17 @@ def _save(d_, features_, features_data_, gene):
     pandas.DataFrame({gene:d_[gene]}).to_csv("y.txt", index=False, sep="\t")
     pandas.DataFrame(collections.OrderedDict([(v,features_data_[v]) for v in features_.id.values])).to_csv("x.txt", index=False, sep="\t")
 
-def get_weights(x_weights, id_whitelist):
-    if x_weights[1] == "PIP":
-        w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
-        w = w.rename(columns={"gene":"gene_id", "pip":"w", "variant_id":"id"})
-        w.w = 1 - w.w #Less penalty to the more probable snps
+def get_weights(x_weights, id_whitelist, pre_parsed=False):
+    if pre_parsed:
+        return Miscellaneous.dapg_preparsed(x_weights)
     else:
-        raise RuntimeError("unsupported weights argument")
-    return w
+        if x_weights[1] == "PIP":
+            w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
+            w = w.rename(columns={"gene":"gene_id", "pip":"w", "variant_id":"id"})
+            w.w = 1 - w.w #Less penalty to the more probable snps
+        else:
+            raise RuntimeError("unsupported weights argument")
+        return w
 
 ###############################################################################
 
@@ -153,12 +157,33 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
 ########################################################################################################################
 
-def process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, summary_fields, train, postfix=None, nested_folds=10):
-    gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
-    logging.log(8, "loading data")
-    d_ = Parquet._read(data, [data_annotation_.gene_id])
-    features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
+def process(w, s, c, data, data_annotation_, features_handler, features_metadata,
+            features, x_weights, summary_fields, train, postfix=None,
+            nested_folds=10):
+    """
 
+    :param w: weights file handle
+    :param s: summary file handle
+    :param c: covariance file handle
+    :param data: ParquetFile phenotype data
+    :param data_annotation_: Pandas tuple with attributes 'gene_name', 'gene_id', 'gene_type'
+    :param features_handler: class FeaturesHandler
+    :param features_metadata: Pandas DataFrame
+    ???  :param features: ParquetFile
+    :param x_weights:
+    :param summary_fields: list of strings
+    :param train: function. Training function
+    :param postfix: int. If doing repeats, this is the repeat number.
+    :param nested_folds: int. Number of nested folds.
+    :return:
+    """
+    gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
+    logging.log(8, "loading phenotype data")
+    d_ = Parquet._read(data, [data_annotation_.gene_id])
+
+    features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
+    print(type(features))
+    print(features.head())
     if x_weights is not None:
         x_w = features_[["id"]].merge(x_weights[x_weights.gene_id == data_annotation_.gene_id], on="id")
         features_ = features_[features_.id.isin(x_w.id)]
@@ -210,7 +235,76 @@ def process(w, s, c, data, data_annotation_, features, features_metadata, x_weig
         c.write(l)
 
 ########################################################################################################################
+class FeaturesHandler:
+    """
+    This class is for loading parquet metadata and genotype files. Most of its
+    functionality is meant to assist in the case that both metadata and genotype
+    are split into 22 files, but it should be robust to the case where there is
+    only one genotype or metadata file.
+    """
+    def __init__(self, features, metadata):
+        """
+        If either argument is a pattern for multiple files, it must be
+        formattable with the argument 'chr'
+        """
+        self.m_features = self.check_if_formattable(features)
+        if self.m_features:
+            self.features = self.format_chrom_file_names(features)
+        else:
+            self.features = [features]
 
+        self.m_metadata = self.check_if_formattable(metadata)
+        if self.m_metadata:
+            self.metadata = self.format_chrom_file_names(metadata)
+        else:
+            self.metadata = [metadata]
+
+    @staticmethod
+    def format_chrom_file_names(s):
+        l = [s.format(chr=i) for i in range(1, 23)]
+        return l
+    @staticmethod
+    def check_if_formattable(s):
+        matches = re.findall('{(.*?)}', s)
+        if len(matches) > 0 and matches[0] == 'chr':
+            return True
+        else:
+            return False
+
+    def load_metadata(self, whitelist=None):
+        if whitelist is not None:
+            df_lst = []
+            for i in self.metadata:
+                df_i = pq.read_table(i).to_pandas()
+                if whitelist is not None:
+                    df_i = df_i[df_i.rsid.isin(whitelist)]
+                df_lst.append(df_i)
+            return pandas.concat(df_lst)
+
+    def load_features(self, metadata):
+        """
+        :param metadata: pandas DataFrame with columns 'variant_id' and
+                'chromosome'
+        :return:
+        """
+        if self.m_features:
+            return self._load_features_multiple(metadata)
+        else:
+            return self._load_features_single(metadata)
+
+    def _load_features_single(self, metadata):
+        return pq.read_table(self.features[0],
+                             columns=list(metadata.variant_id))
+
+    def _load_features_multiple(self, metadata):
+        for chr, group in metadata.groupby('chromosome'):
+            chr_fp = self.features[chr - 1]
+            chr_vars =  list(group.variant_id)
+            chr_features = pq.read_table(chr_fp, columns=chr_vars)
+
+        return
+
+########################################################################################################################
 def run(args):
 
     logging.info("Starting")
@@ -230,6 +324,17 @@ def run(args):
     data = pq.ParquetFile(args.data)
     available_data = {x for x in data.metadata.schema.names}
 
+    if args.features_weights:
+        logging.info("Loading weights")
+        x_weights = get_weights(args.features_weights, pre_parsed=True)
+        whitelist = { v for v in x_weights.variant_id}
+    else:
+        x_weights = None
+        whitelist = None
+
+    features_handler = FeaturesHandler(args.featues, args.features_metadata)
+    features_metadata = features_handler.load_metadata(whitelist=whitelist)
+
     if args.data_annotation:
         logging.info("Loading data annotation")
         data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
@@ -241,30 +346,25 @@ def run(args):
     else:
         data_annotation = None
 
-    logging.info("Opening features annotation")
-    if not args.chromosome:
-        features_metadata = pq.read_table(args.features_annotation).to_pandas()
-    else:
-        features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
+    # logging.info("Opening features annotation")
+    # if not args.chromosome:
+    #     features_metadata = pq.read_table(args.features_annotation).to_pandas()
+    # else:
+    #     features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
 
     if args.chromosome and args.sub_batches and data_annotation:
         logging.info("Trimming variants")
         features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
 
-    if args.rsid_whitelist:
-        logging.info("Filtering features annotation")
-        whitelist = TextFileTools.load_list(args.rsid_whitelist)
-        whitelist = set(whitelist)
-        features_metadata = features_metadata[features_metadata.rsid.isin(whitelist)]
+    # if args.rsid_whitelist:
+    #     logging.info("Filtering features annotation")
+    #     whitelist = TextFileTools.load_list(args.rsid_whitelist)
+    #     whitelist = set(whitelist)
+    #     features_metadata = features_metadata[features_metadata.rsid.isin(whitelist)]
 
-    if args.features_weights:
-        logging.info("Loading weights")
-        x_weights = get_weights(args.features_weights, {x for x in features_metadata.id})
-        logging.info("Filtering features metadata to those available in weights")
-        features_metadata = features_metadata[features_metadata.id.isin(x_weights.id)]
-        logging.info("Kept %d entries", features_metadata.shape[0])
-    else:
-        x_weights = None
+
+    # else:
+    #     x_weights = None
 
     if data_annotation is None:
         d_ = pq.ParquetFile(args.data)
@@ -305,9 +405,15 @@ def run(args):
                     if args.repeat:
                         for j in range(0, args.repeat):
                             logging.log(9, "%i-th reiteration", j)
-                            process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, j, args.nested_cv_folds)
+                            process(w, s, c, data, data_annotation_,
+                                    features_handler, features_metadata,
+                                    x_weights, SUMMARY_FIELDS, train, j,
+                                    args.nested_cv_folds)
                     else:
-                        process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, nested_folds=args.nested_cv_folds)
+                        process(w, s, c, data, data_annotation_,
+                                features_handler, features_metadata, x_weights,
+                                SUMMARY_FIELDS, train,
+                                nested_folds=args.nested_cv_folds)
 
     logging.info("Finished")
 
@@ -318,7 +424,7 @@ if __name__ == "__main__":
     parser.add_argument("--features_weights", nargs="+")
     parser.add_argument("-features")
     parser.add_argument("-features_annotation")
-    parser.add_argument("-data")
+    parser.add_argument("-data", help="Phenotype data, parquet format")
     parser.add_argument("-data_annotation")
     parser.add_argument("-window", type = int)
     parser.add_argument("--run_tag")
