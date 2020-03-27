@@ -423,12 +423,13 @@ class PhenoDataHandler:
         self._features_metadata = metadata
         self._merge_metadata_weights()
 
-    def add_features_weights(self, weights):
+    def add_features_weights(self, weights, pheno_col='gene_id'):
         """
         :param weights: pandas DataFrame
+        :param pheno_col: str. Name of col with phenotype data
         """
 
-        weights = weights.rename(mapper={'variant_id': 'id'}, axis=1)
+        weights = weights.rename(mapper={'variant_id': 'id', pheno_col: 'gene_id'}, axis=1)
 
         # Only keep the intersection of genes from weights, genes from data
         ids_from_weights = set(weights.gene_id)
@@ -465,4 +466,4 @@ class PhenoDataHandler:
         return _read(self.data, [pheno], to_pandas=to_pandas)
 
     def get_individuals(self):
-        return self.data.read(columns=['individual']).to_pylist()
+        return self.data.read(columns=['individual']).to_pydict()['individual']

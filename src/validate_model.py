@@ -95,14 +95,14 @@ def run(args):
 
     logging.info("Loading weights")
     weights = load_weights(args.model_weights)
-    var_lst = list(weights.id)
-    d_handler.add_features_weights(weights)
+    var_lst = list(weights.varID)
+    d_handler.add_features_weights(weights, pheno_col = 'gene')
 
 
 
     logging.info("Opening geno metadata")
     f_handler = Parquet.MultiFileGenoHandler(args.features,
-                                             args.features_metadata)
+                                             args.features_annotation)
     features_metadata = f_handler.load_metadata(whitelist=var_lst)
 
 
