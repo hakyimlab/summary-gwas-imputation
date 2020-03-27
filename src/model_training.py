@@ -45,22 +45,7 @@ def _save(d_, features_, features_data_, gene):
     pandas.DataFrame({gene:d_[gene]}).to_csv("y.txt", index=False, sep="\t")
     pandas.DataFrame(collections.OrderedDict([(v,features_data_[v]) for v in features_.id.values])).to_csv("x.txt", index=False, sep="\t")
 
-def get_weights(x_weights, id_whitelist=None, pre_parsed=False):
-    if pre_parsed:
-        weights_df_lst = []
-        for i in x_weights:
-            weights_df_lst.append(Miscellaneous.dapg_preparsed(i))
-        return pandas.concat(weights_df_lst)
-    else:
-        if id_whitelist is None:
-            raise ValueError("Either id_whitelist or pre_parsed must be specified")
-        if x_weights[1] == "PIP":
-            w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
-            w = w.rename(columns={"gene":"gene_id", "pip":"w", "variant_id":"id"})
-            w.w = 1 - w.w #Less penalty to the more probable snps
-        else:
-            raise RuntimeError("unsupported weights argument")
-        return w
+
 
 ###############################################################################
 
@@ -162,19 +147,18 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
 ########################################################################################################################
 
-def process(w, s, c, data, data_annotation_, features_handler, features_metadata,
-             x_weights, summary_fields, train, postfix=None,
+def process(w, s, c, data_handler, data_annotation_, features_handler,
+             weights, summary_fields, train, postfix=None,
             nested_folds=10):
     """
 
     :param w: weights file handle
     :param s: summary file handle
     :param c: covariance file handle
-    :param data: ParquetFile phenotype data
+    :param data_handler: class DataHandler
     :param data_annotation_: Pandas tuple with attributes 'gene_name', 'gene_id', 'gene_type'
     :param features_handler: class FeaturesHandler
-    :param features_metadata: Pandas DataFrame
-    :param x_weights:
+    :param weights: Bool
     :param summary_fields: list of strings
     :param train: function. Training function
     :param postfix: int. If doing repeats, this is the repeat number.
@@ -183,11 +167,14 @@ def process(w, s, c, data, data_annotation_, features_handler, features_metadata
     """
     gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
     logging.log(8, "loading phenotype data")
-    d_ = Parquet._read(data, [data_annotation_.gene_id])
+    d_ = data_handler.load_pheno(data_annotation_.gene_id)
+    # d_ = Parquet._read(data, [data_annotation_.gene_id])
 
-    features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
-    if x_weights is not None:
-        x_w = robjects.FloatVector(x_weights.w.values)
+    features_ = data_handler.get_features(data_annotation_.gene_id)
+
+    # features_ = Genomics.entries_for_gene_annotation(data_annotationn_, args.window, features_metadata)
+    if weights:
+        x_w = robjects.FloatVector(features_.w.values)
     else:
         x_w = None
 
@@ -315,6 +302,87 @@ class FeaturesHandler:
         logging.log(5, "Loaded {} features".format(df_lst[0].shape[1]))
         return df_lst[0].reset_index().to_dict(orient='list')
 
+class DataHandler:
+    """
+    This class is meant to handle phenotype data and optional weights.
+    """
+    def __init__(self, data_fp, sub_batches=None, sub_batch=None):
+        self.data = pq.ParquetFile(data_fp)
+        d_names = self.data.metadata.schema.names
+        d_names.remove('individual')
+        self.data_annotation = self._load_data_annotation(d_names,
+                                                          sub_batches,
+                                                          sub_batch)
+
+        self._features_metadata = None
+        self.send_weights = False
+        self._features_weights = None
+        self.features = None
+
+    def _load_data_annotation(self, names, n_batches = None, batch = None):
+        if n_batches is not None and batch is not None:
+            names = numpy.array_split(names, n_batches)[batch]
+        logging.log(9, "Annotations for {} phenos".format(len(names)))
+        annot_dd = {'gene': names, 'gene_id': names,
+                    'gene_type': ['NA'] * len(names)}
+        return pandas.DataFrame(annot_dd)
+
+    def add_features_metadata(self, metadata):
+        self._features_metadata = metadata
+        self._merge_metadata_weights()
+
+    def add_features_weights(self, weights_fps, pre_parsed=False,
+                             only_weighted_phenos = False, id_whitelist=None):
+
+        # Columns:  variant_id      w     cluster region  gene_id chromosome
+        weights = self._get_weights(weights_fps, id_whitelist=id_whitelist,
+                               pre_parsed=pre_parsed)[['variant_id', 'w',
+                                                       'gene_id', 'chromosome']]
+        # Only keep the weighted genes
+        gene_ids = set(weights.gene_id).intersection(set(self.data_annotation.gene_id))
+        weights = weights.loc[weights.gene_id.isin(gene_ids)]
+        self.data_annotation = self.data_annotation.loc[self.data_annotation.gene_id.isin(gene_ids)]
+
+        self._features_weights = weights
+        self._merge_metadata_weights()
+
+    def _merge_metadata_weights(self):
+        if (self._features_weights is not None) and \
+        (self._features_metadata is not None):
+            self._features_weights = self._features_weights.filter(
+                self._features_metadata.id, axis = 0).groupby('gene_id')
+
+            self.send_weights = True
+
+    def get_features(self, pheno):
+        if self.send_weights:
+            return self._features_weights.get_group(pheno)
+        else:
+            return [x for x in self._features_metadata.id]
+
+    def load_pheno(self, pheno):
+        return Parquet._read(self.data, [pheno])
+
+    @staticmethod
+    def _get_weights(x_weights, id_whitelist=None, pre_parsed=False):
+        if pre_parsed:
+            weights_df_lst = []
+            for i in x_weights:
+                weights_df_lst.append(Miscellaneous.dapg_preparsed(i))
+            df = pandas.concat(weights_df_lst)
+            df.w = 1 - df.w
+            return df
+        else:
+            if id_whitelist is None:
+                raise ValueError("Either id_whitelist or pre_parsed must be specified")
+            if x_weights[1] == "PIP":
+                w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
+                w = w.rename(columns={"gene": "gene_id", "pip": "w", "variant_id": "id"})
+                w.w = 1 - w.w  # Less penalty to the more probable snps
+            else:
+                raise RuntimeError("unsupported weights argument")
+            return w
+
 ########################################################################################################################
 def run(args):
 
@@ -332,30 +400,35 @@ def run(args):
 
 
     logging.info("Opening data")
-    data = pq.ParquetFile(args.data)
-    available_data = {x for x in data.metadata.schema.names}
+    d_handler = DataHandler(args.data, args.sub_batches, args.sub_batch)
+    # data = pq.ParquetFile(args.data)
+    # available_data = {x for x in data.metadata.schema.names}
 
     if args.features_weights:
         logging.info("Loading weights")
-        x_weights = get_weights(args.features_weights, pre_parsed=True)
-        whitelist = { v for v in x_weights.variant_id}
+        data_handler.add_features_weights(args.features_weights,
+                                          pre_parsed=True)
+        # x_weights = get_weights(args.features_weights, pre_parsed=True)
+        # whitelist = { v for v in x_weights.variant_id}
     else:
         x_weights = None
         whitelist = None
 
-    features_handler = FeaturesHandler(args.features, args.features_annotation)
-    features_metadata = features_handler.load_metadata(whitelist=whitelist)
+    f_handler = FeaturesHandler(args.features, args.features_annotation)
+    # features_metadata = features_handler.load_metadata(whitelist=whitelist)
+    features_metadata = f_handler.load_metadata()
+    d_handler.add_features_metadata(features_metadata)
 
-    if args.data_annotation:
-        logging.info("Loading data annotation")
-        data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
-        data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
-        if args.gene_whitelist:
-            logging.info("Applying gene whitelist")
-            data_annotation = data_annotation[data_annotation.gene_id.isin(set(args.gene_whitelist))]
-        logging.info("Kept %i entries", data_annotation.shape[0])
-    else:
-        data_annotation = None
+    # if args.data_annotation:
+    #     logging.info("Loading data annotation")
+    #     data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
+    #     data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
+    #     if args.gene_whitelist:
+    #         logging.info("Applying gene whitelist")
+    #         data_annotation = data_annotation[data_annotation.gene_id.isin(set(args.gene_whitelist))]
+    #     logging.info("Kept %i entries", data_annotation.shape[0])
+    # else:
+    #     data_annotation = None
 
     # logging.info("Opening features annotation")
     # if not args.chromosome:
@@ -363,9 +436,9 @@ def run(args):
     # else:
     #     features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
 
-    if args.chromosome and args.sub_batches and data_annotation:
-        logging.info("Trimming variants")
-        features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
+    # if args.chromosome and args.sub_batches and data_annotation:
+    #     logging.info("Trimming variants")
+    #     features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
 
 
     # if args.rsid_whitelist:
@@ -378,13 +451,13 @@ def run(args):
     # else:
     #     x_weights = None
 
-    if data_annotation is None:
-        d_ = pq.ParquetFile(args.data)
-        gene_lst = d_.metadata.schema.names
-        gene_lst.remove('individual')
-        dd = {'gene_name': gene_lst, 'gene_id': gene_lst,
-              'gene_type': ['NA'] * len(gene_lst)}
-        data_annotation = pandas.DataFrame(dd)
+    # if data_annotation is None:
+    #     d_ = pq.ParquetFile(args.data)
+    #     gene_lst = d_.metadata.schema.names
+    #     gene_lst.remove('individual')
+    #     dd = {'gene_name': gene_lst, 'gene_id': gene_lst,
+    #           'gene_type': ['NA'] * len(gene_lst)}
+    #     data_annotation = pandas.DataFrame(dd)
 
 #    logging.info("Opening features")
 #    features = pq.ParquetFile(args.features)
@@ -409,21 +482,20 @@ def run(args):
             s.write(("\t".join(SUMMARY_FIELDS) + "\n").encode())
             with gzip.open(cp, "w") as c:
                 c.write("GENE RSID1 RSID2 VALUE\n".encode())
-                for i,data_annotation_ in enumerate(data_annotation.itertuples()):
+                for i,data_annotation_ in enumerate(d_handler.data_annotation.itertuples()):
                     if args.MAX_M and  i>=args.MAX_M:
                         logging.info("Early abort")
                         break
-                    logging.log(9, "processing %i/%i:%s", i+1, data_annotation.shape[0], data_annotation_.gene_id)
+                    logging.log(9, "processing %i/%i:%s", i+1, d_handler.data_annotation.shape[0], data_annotation_.gene_id)
                     if args.repeat:
                         for j in range(0, args.repeat):
                             logging.log(9, "%i-th reiteration", j)
-                            process(w, s, c, data, data_annotation_,
-                                    features_handler, features_metadata,
-                                    x_weights, SUMMARY_FIELDS, train, j,
-                                    args.nested_cv_folds)
+                            process(w, s, c, d_handler, data_annotation_,
+                                    f_handler, d_handler.send_weights,
+                                    SUMMARY_FIELDS, train, j, args.nested_cv_folds)
                     else:
-                        process(w, s, c, data, data_annotation_,
-                                features_handler, features_metadata, x_weights,
+                        process(w, s, c, d_handler, data_annotation_,
+                                f_handler, d_handler.send_weights,
                                 SUMMARY_FIELDS, train,
                                 nested_folds=args.nested_cv_folds)
 
