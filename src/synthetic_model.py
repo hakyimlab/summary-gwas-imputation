@@ -18,7 +18,7 @@ def run(args):
     Utilities.ensure_requisite_folders(args.output)
 
     logging.info("Loading variant annotation")
-    variants = KeyedDataSource.load_data(args.variant_annotation, "variant_id", "rs_id_dbSNP150_GRCh38p7")
+    variants = KeyedDataSource.load_data(args.variant_annotation, "variant_id", args.dbsnp_column)
 
     logging.info("Loading data annotation")
     if len(args.data_annotation) == 1:

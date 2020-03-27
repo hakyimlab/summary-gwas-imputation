@@ -19,7 +19,7 @@ def run(args):
 
     maf_filter = float(filters["MAF"][0]) if "MAF" in filters else None
     logging.info("Loading GTEX variant map")
-    gtex_snp_key = GTExMisc.load_gtex_variant_to_rsid(args.annotation[0])
+    gtex_snp_key = GTExMisc.load_gtex_variant_to_rsid(args.annotation[0], args.dbsnp_column)
 
     logging.info("Processing genotype")
     m = []
@@ -48,6 +48,7 @@ if __name__ == "__main__":
     parser.add_argument("-output", help = "Where to save the file")
     parser.add_argument("-filter", help="What to apply", nargs="+", action="append")
     parser.add_argument("-parsimony", help="Log parsimony", type=int, default=10)
+    parser.add_argument("-dbsnp_column", help="dbSNP column", default="rs_id_dbSNP151_GRCh38p7")
     args = parser.parse_args()
 
     Logging.configure_logging(args.parsimony)
