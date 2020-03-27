@@ -174,7 +174,6 @@ def process(w, s, c, data, data_annotation_, features_handler, features_metadata
     :param data_annotation_: Pandas tuple with attributes 'gene_name', 'gene_id', 'gene_type'
     :param features_handler: class FeaturesHandler
     :param features_metadata: Pandas DataFrame
-    ???  :param features: ParquetFile
     :param x_weights:
     :param summary_fields: list of strings
     :param train: function. Training function
@@ -198,9 +197,9 @@ def process(w, s, c, data, data_annotation_, features_handler, features_metadata
         logging.log(9, "No features available")
         return
 
-    features_data_ = features_handler.load_features(features_)
-    features_data_ = Parquet._read(features, [x for x in features_.id.values],
-                                   specific_individuals=[x for x in d_["individual"]])
+    features_data_ = features_handler.load_features(features_, [x for x in d_['individual']])
+    # features_data_ = Parquet._read(features, [x for x in features_.id.values],
+    #                                specific_individuals=[x for x in d_["individual"]])
 
     logging.log(8, "training")
     weights, summary = train(features_data_, features_, d_, data_annotation_, x_w, not args.dont_prune, nested_folds)
@@ -285,28 +284,36 @@ class FeaturesHandler:
                 df_lst.append(df_i)
             return pandas.concat(df_lst)
 
-    def load_features(self, metadata):
+    def load_features(self, metadata, individuals):
         """
         :param metadata: pandas DataFrame with columns 'variant_id' and
                 'chromosome'
+        :param individuals: list. Individual IDs
         :return:
         """
         if self.m_features:
-            return self._load_features_multiple(metadata)
+            return self._load_features_multiple(metadata, individuals)
         else:
-            return self._load_features_single(metadata)
+            return self._load_features_single(metadata, individuals)
 
-    def _load_features_single(self, metadata):
-        return pq.read_table(self.features[0],
-                             columns=list(metadata.variant_id))
+    def _load_features_single(self, metadata, individuals):
+        return Parquet._read(self.features[0], columns=[x for x in metadata.id],
+                             specific_individuals=individuals)
 
-    def _load_features_multiple(self, metadata):
+    def _load_features_multiple(self, metadata, individuals):
+        df_lst = []
         for chr, group in metadata.groupby('chromosome'):
             chr_fp = self.features[chr - 1]
-            chr_vars =  list(group.variant_id)
-            chr_features = pq.read_table(chr_fp, columns=chr_vars)
-
-        return
+            chr_vars = list(group.id)
+            chr_vars.append('individual')
+            chr_features = Parquet._read(chr_fp, chr_vars,
+                                         specific_individuals=individuals)
+            df_lst.append(chr_features.to_pandas().set_index('individual'))
+        logging.log(5, "Reducing {} arrays".format(len(df_lst)))
+        while len(df_lst) > 1:
+            df_lst[0].join(df_lst.pop(), how='inner')
+        logging.log(5, "Feature array has shape {}".format(df_lst[0].shape))
+        return df_lst[0]
 
 ########################################################################################################################
 def run(args):
