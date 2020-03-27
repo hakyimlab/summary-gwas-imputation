@@ -260,14 +260,13 @@ class FeaturesHandler:
             return False
 
     def load_metadata(self, whitelist=None):
-        if whitelist is not None:
-            df_lst = []
-            for i in self.metadata:
-                df_i = pq.read_table(i).to_pandas()
-                if whitelist is not None:
-                    df_i = df_i[df_i.id.isin(whitelist)]
-                df_lst.append(df_i)
-            return pandas.concat(df_lst)
+        df_lst = []
+        for i in self.metadata:
+            df_i = pq.read_table(i).to_pandas()
+            if whitelist is not None:
+                df_i = df_i[df_i.id.isin(whitelist)]
+            df_lst.append(df_i)
+        return pandas.concat(df_lst)
 
     def load_features(self, metadata, individuals):
         """
@@ -338,10 +337,14 @@ class DataHandler:
         weights = self._get_weights(weights_fps, id_whitelist=id_whitelist,
                                pre_parsed=pre_parsed)[['variant_id', 'w',
                                                        'gene_id', 'chromosome']]
+        weights = weights.rename(mapper={'variant_id': 'id'}, axis=1)
         # Only keep the weighted genes
-        gene_ids = set(weights.gene_id).intersection(set(self.data_annotation.gene_id))
+        ids_from_weights = set(weights.gene_id)
+        ids_from_data = set(self.data_annotation.gene_id)
+        gene_ids = ids_from_weights.intersection(ids_from_data)
         weights = weights.loc[weights.gene_id.isin(gene_ids)]
         self.data_annotation = self.data_annotation.loc[self.data_annotation.gene_id.isin(gene_ids)]
+        logging.log(9, "Weights loaded for {} phenos".format(len(self.data_annotation)))
 
         self._features_weights = weights
         self._merge_metadata_weights()
@@ -349,16 +352,16 @@ class DataHandler:
     def _merge_metadata_weights(self):
         if (self._features_weights is not None) and \
         (self._features_metadata is not None):
-            self._features_weights = self._features_weights.filter(
-                self._features_metadata.id, axis = 0).groupby('gene_id')
-
+            ids = set(self._features_metadata.id)
+            f_w = self._features_weights.loc[self._features_weights.id.isin(ids)]
+            self._features_weights = f_w.groupby('gene_id')
             self.send_weights = True
 
     def get_features(self, pheno):
         if self.send_weights:
             return self._features_weights.get_group(pheno)
         else:
-            return [x for x in self._features_metadata.id]
+            return self._features_metadata[['id', 'chromosome']]
 
     def load_pheno(self, pheno):
         return Parquet._read(self.data, [pheno])
@@ -399,23 +402,20 @@ def run(args):
         Utilities.ensure_no_file(i)
 
 
-    logging.info("Opening data")
+    logging.info("Opening pheno data")
     d_handler = DataHandler(args.data, args.sub_batches, args.sub_batch)
     # data = pq.ParquetFile(args.data)
     # available_data = {x for x in data.metadata.schema.names}
 
     if args.features_weights:
         logging.info("Loading weights")
-        data_handler.add_features_weights(args.features_weights,
+        d_handler.add_features_weights(args.features_weights,
                                           pre_parsed=True)
         # x_weights = get_weights(args.features_weights, pre_parsed=True)
         # whitelist = { v for v in x_weights.variant_id}
-    else:
-        x_weights = None
-        whitelist = None
 
     f_handler = FeaturesHandler(args.features, args.features_annotation)
-    # features_metadata = features_handler.load_metadata(whitelist=whitelist)
+    logging.info("Loading geno metadata")
     features_metadata = f_handler.load_metadata()
     d_handler.add_features_metadata(features_metadata)
 
