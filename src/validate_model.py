@@ -39,6 +39,13 @@ def loss(X, y_true, weights):
     correlation = pearsonr(y_true, y_pred)[0]
     return (score, correlation)
 
+def predict(X, weights):
+    pass
+
+def performance_measures(y_true, y_pred):
+    pass
+
+
 def load_weights(fp):
     return pandas.read_csv(fp, sep = "\t")
 
@@ -52,9 +59,23 @@ def validate(pheno, f_handler, d_handler, individuals):
     pheno_data = d_handler.load_pheno(pheno, to_pandas=True)
     pheno_data = pheno_data.set_index('individual')
 
-    features_ = d_handler.get_features(pheno)
+    features_weights = d_handler.get_features(pheno)
 
-    geno_data = f_handler.load_features(features_, individuals, pandas=True)
+    # individuals in the rows
+    geno_data = f_handler.load_features(features_weights, individuals, pandas=True)
+    geno_data = geno_data.set_index('individual').reindex(pheno_data.index)
+
+    y_true = numpy.array(pheno_data[pheno])
+    X = numpy.array(geno_data)
+
+    features_weights = features_weights.reindex(geno_data.columns)
+    beta = numpy.array(features_weights.w)
+    y_pred = numpy.dot(X, beta)
+
+    return None
+
+
+
 
 
 
@@ -98,18 +119,18 @@ def run(args):
         results = validate(pheno, f_handler, d_handler, individuals)
 
 
-        weights_df, pheno_series = data_generator.get_pheno_model(i, pheno_map.map_pheno(i))
-        dm, rsids = data_generator.get_design_matrix(i)
-        weights_df = weights_df.reindex(rsids)
-        val_weights = np.array(weights_df['weights'])
-        loss_r2, loss_corr = loss(dm, np.array(pheno_series), val_weights)
-        with open(result_fp, 'a') as f:
-            f.write("{}\t{}\t{}\n".format(i, loss_r2, loss_corr))
-        # results_df = results_df.append({'r2': loss_val,
-        #                                 'pheno': i})
-        # logging.info("Writing validation results to {}".format(result_fp))
-        # results_df.to_csv(result_fp, sep = "\t", index=False)
-        logging.info("Wrote results to {}".format(result_fp))
+        # weights_df, pheno_series = data_generator.get_pheno_model(i, pheno_map.map_pheno(i))
+        # dm, rsids = data_generator.get_design_matrix(i)
+        # weights_df = weights_df.reindex(rsids)
+        # val_weights = np.array(weights_df['weights'])
+        # loss_r2, loss_corr = loss(dm, np.array(pheno_series), val_weights)
+        # with open(result_fp, 'a') as f:
+        #     f.write("{}\t{}\t{}\n".format(i, loss_r2, loss_corr))
+        # # results_df = results_df.append({'r2': loss_val,
+        # #                                 'pheno': i})
+        # # logging.info("Writing validation results to {}".format(result_fp))
+        # # results_df.to_csv(result_fp, sep = "\t", index=False)
+        # logging.info("Wrote results to {}".format(result_fp))
 
 
 if __name__ == '__main__':
