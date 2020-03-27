@@ -185,9 +185,7 @@ def process(w, s, c, data, data_annotation_, features_handler, features_metadata
     logging.log(8, "loading phenotype data")
     d_ = Parquet._read(data, [data_annotation_.gene_id])
 
-    print(x_weights.head())
     features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
-    print(features_.head())
     if x_weights is not None:
         x_w = robjects.FloatVector(x_weights.w.values)
     else:
@@ -297,8 +295,10 @@ class FeaturesHandler:
             return self._load_features_single(metadata, individuals)
 
     def _load_features_single(self, metadata, individuals):
-        return Parquet._read(self.features[0], columns=[x for x in metadata.id],
+        dd =  Parquet._read(pq.ParquetFile(self.features[0]), columns=[x for x in metadata.id],
                              specific_individuals=individuals)
+        logging.log(5, "Loaded {} features".format(len(dd) - 1))
+        return dd
 
     def _load_features_multiple(self, metadata, individuals):
         df_lst = []
@@ -306,14 +306,14 @@ class FeaturesHandler:
             chr_fp = self.features[chr - 1]
             chr_vars = list(group.id)
             chr_vars.append('individual')
-            chr_features = Parquet._read(chr_fp, chr_vars,
-                                         specific_individuals=individuals)
-            df_lst.append(chr_features.to_pandas().set_index('individual'))
-        logging.log(5, "Reducing {} arrays".format(len(df_lst)))
+            chr_features = Parquet._read(pq.ParquetFile(chr_fp), chr_vars,
+                                         specific_individuals=individuals,
+                                         to_pandas = True)
+            df_lst.append(chr_features.set_index('individual'))
         while len(df_lst) > 1:
             df_lst[0].join(df_lst.pop(), how='inner')
-        logging.log(5, "Feature array has shape {}".format(df_lst[0].shape))
-        return df_lst[0]
+        logging.log(5, "Loaded {} features".format(df_lst[0].shape[1]))
+        return df_lst[0].reset_index().to_dict(orient='list')
 
 ########################################################################################################################
 def run(args):
