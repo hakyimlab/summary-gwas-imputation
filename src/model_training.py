@@ -352,9 +352,11 @@ class DataHandler:
     def _merge_metadata_weights(self):
         if (self._features_weights is not None) and \
         (self._features_metadata is not None):
-            ids = set(self._features_metadata.id)
-            f_w = self._features_weights.loc[self._features_weights.id.isin(ids)]
-            self._features_weights = f_w.groupby('gene_id')
+            logging.log(9, 'Merging geno metadata and weights')
+            f_w = self._features_weights.set_index('id')
+            m = self._features_metadata.set_index('id')
+
+            self._features_weights = f_w.join(m, how='left').groupby('gene_id')
             self.send_weights = True
 
     def get_features(self, pheno):
