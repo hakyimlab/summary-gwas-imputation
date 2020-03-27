@@ -322,7 +322,7 @@ class DataHandler:
         if n_batches is not None and batch is not None:
             names = numpy.array_split(names, n_batches)[batch]
         logging.log(9, "Annotations for {} phenos".format(len(names)))
-        annot_dd = {'gene': names, 'gene_id': names,
+        annot_dd = {'gene_name': names, 'gene_id': names,
                     'gene_type': ['NA'] * len(names)}
         return pandas.DataFrame(annot_dd)
 
@@ -352,11 +352,14 @@ class DataHandler:
     def _merge_metadata_weights(self):
         if (self._features_weights is not None) and \
         (self._features_metadata is not None):
-            logging.log(9, 'Merging geno metadata and weights')
+            logging.info( 'Merging geno metadata and weights')
             f_w = self._features_weights.set_index('id')
             m = self._features_metadata.set_index('id')
-
-            self._features_weights = f_w.join(m, how='left').groupby('gene_id')
+            cols = list(m.columns)
+            cols.extend(['w', 'gene_id'])
+            f_w = f_w.join(m, how='left', rsuffix='_m')[cols]
+            f_w['id'] = f_w.index
+            self._features_weights = f_w.groupby('gene_id')
             self.send_weights = True
 
     def get_features(self, pheno):
