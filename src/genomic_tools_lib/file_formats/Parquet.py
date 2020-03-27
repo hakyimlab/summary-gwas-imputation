@@ -284,3 +284,184 @@ class ParquetDataFrameSink(DataFrameSink):
     def finalize(self):
         logging.log(9, "Finalizing parquet sink")
         self.writer.close()
+
+###############################################################################
+class MultiFileGenoHandler:
+    """
+    This class is for loading parquet metadata and genotype files. Most of its
+    functionality is meant to assist in the case that both metadata and genotype
+    are split into 22 files, but it should be robust to the case where there is
+    only one genotype or metadata file.
+    """
+    def __init__(self, features, metadata):
+        """
+        If either argument is a pattern for multiple files, it must be
+        formattable with the argument 'chr'
+
+        :param features: filepath (or pattern for multiple) for genotype files
+        :param metadata: filepath (or pattern for multiple) for geno metadata
+        """
+        self.m_features = self.check_if_formattable(features)
+        if self.m_features:
+            self.features = self.format_chrom_file_names(features)
+        else:
+            self.features = [features]
+
+        self.m_metadata = self.check_if_formattable(metadata)
+        if self.m_metadata:
+            self.metadata = self.format_chrom_file_names(metadata)
+        else:
+            self.metadata = [metadata]
+
+    @staticmethod
+    def format_chrom_file_names(s):
+        l = [s.format(chr=i) for i in range(1, 23)]
+        return l
+    @staticmethod
+    def check_if_formattable(s):
+        matches = re.findall('{(.*?)}', s)
+        if len(matches) > 0 and matches[0] == 'chr':
+            return True
+        else:
+            return False
+
+    def load_metadata(self, whitelist=None):
+        df_lst = []
+        for i in self.metadata:
+            df_i = pq.read_table(i).to_pandas()
+            if whitelist is not None:
+                df_i = df_i[df_i.id.isin(whitelist)]
+            df_lst.append(df_i)
+        return pandas.concat(df_lst)
+
+    def load_features(self, metadata, individuals, pandas=False):
+        """
+        :param metadata: pandas DataFrame with columns 'variant_id' and
+                'chromosome'
+        :param individuals: list. Individual IDs
+        :param pandas: bool. default False. Whether the returned obj should be
+                a pandas DataFrame
+        :return: dict.
+        """
+        if self.m_features:
+            return self._load_features_multiple(metadata, individuals, pandas)
+        else:
+            return self._load_features_single(metadata, individuals, pandas)
+
+    def _load_features_single(self, metadata, individuals, pandas):
+        dd =  _read(pq.ParquetFile(self.features[0]),
+                    columns=[x for x in metadata.id],
+                    specific_individuals=individuals,
+                    to_pandas=pandas)
+        logging.log(5, "Loaded {} features".format(len(dd) - 1))
+        return dd
+
+    def _load_features_multiple(self, metadata, individuals, pandas):
+        df_lst = []
+        for chr, group in metadata.groupby('chromosome'):
+            chr_fp = self.features[chr - 1]
+            chr_vars = list(group.id)
+            chr_vars.append('individual')
+            chr_features = _read(pq.ParquetFile(chr_fp), chr_vars,
+                                         specific_individuals=individuals,
+                                         to_pandas = True)
+            df_lst.append(chr_features.set_index('individual'))
+        while len(df_lst) > 1:
+            df_lst[0].join(df_lst.pop(), how='inner')
+        logging.log(5, "Loaded {} features".format(df_lst[0].shape[1]))
+        if pandas:
+            return df_lst[0]
+        else:
+            return df_lst[0].reset_index().to_dict(orient='list')
+
+###############################################################################
+
+class PhenoDataHandler:
+    """
+    This class is meant to handle phenotype data and optional weights.
+    """
+    def __init__(self, data_fp, data_annotation=None, sub_batches=None,
+                 sub_batch=None):
+        """
+
+        :param data_fp: str. filepath to a Parquet phenotype file
+        :param data_annotation: pandas DataFrame. with columns 'gene_name',
+                    'gene_id', 'gene_type'
+        :param sub_batches: int. How many batches the data should be split into
+        :param sub_batch: int. 0-indexed which batch should be considered
+        """
+        self.data = pq.ParquetFile(data_fp)
+        d_names = self.data.metadata.schema.names
+        d_names.remove('individual')
+        if data_annotation is None:
+            self.data_annotation = data_annotation
+        else:
+            self.data_annotation = self._load_da_manual(sub_batches,
+                                                        sub_batch)
+
+        self._features_metadata = None
+        self.send_weights = False
+        self._features_weights = None
+        self.features = None
+
+    def _load_da_manual(self, n_batches = None, batch = None):
+        names = self.data.metadata.schema.names
+        if (n_batches is not None) and (batch is not None):
+            names = numpy.array_split(names, n_batches)[batch]
+
+        logging.log(9, "Annotations for {} phenos".format(len(names)))
+        annot_dd = {'gene_name': names, 'gene_id': names,
+                    'gene_type': ['NA'] * len(names)}
+        return pandas.DataFrame(annot_dd)
+
+    def add_features_metadata(self, metadata):
+        """
+
+        :param metadata: pandas DataFrame
+        """
+        self._features_metadata = metadata
+        self._merge_metadata_weights()
+
+    def add_features_weights(self, weights):
+        """
+        :param weights: pandas DataFrame
+        """
+
+        weights = weights.rename(mapper={'variant_id': 'id'}, axis=1)
+
+        # Only keep the intersection of genes from weights, genes from data
+        ids_from_weights = set(weights.gene_id)
+        ids_from_data = set(self.data_annotation.gene_id)
+        gene_ids = ids_from_weights.intersection(ids_from_data)
+        weights = weights.loc[weights.gene_id.isin(gene_ids)]
+        self.data_annotation = \
+            self.data_annotation.loc[self.data_annotation.gene_id.isin(gene_ids)]
+        logging.info("Weights loaded for {} genes".format(len(gene_ids)))
+
+        self._features_weights = weights
+        self._merge_metadata_weights()
+
+    def _merge_metadata_weights(self):
+        if (self._features_weights is not None) and \
+        (self._features_metadata is not None):
+            logging.info( 'Merging geno metadata and weights')
+            f_w = self._features_weights.set_index('id')
+            m = self._features_metadata.set_index('id')
+            cols = list(m.columns)
+            cols.extend(['w', 'gene_id'])
+            f_w = f_w.join(m, how='left', rsuffix='_m')[cols]
+            f_w['id'] = f_w.index
+            self._features_weights = f_w.groupby('gene_id')
+            self.send_weights = True
+
+    def get_features(self, pheno):
+        if self.send_weights:
+            return self._features_weights.get_group(pheno)
+        else:
+            return self._features_metadata[['id', 'chromosome']]
+
+    def load_pheno(self, pheno, to_pandas=False):
+        return _read(self.data, [pheno], to_pandas=to_pandas)
+
+    def get_individuals(self):
+        return self.data.read(columns=['individual']).to_pylist()

@@ -45,7 +45,19 @@ def _save(d_, features_, features_data_, gene):
     pandas.DataFrame({gene:d_[gene]}).to_csv("y.txt", index=False, sep="\t")
     pandas.DataFrame(collections.OrderedDict([(v,features_data_[v]) for v in features_.id.values])).to_csv("x.txt", index=False, sep="\t")
 
+def get_weights(x_weights, id_whitelist):
+    if x_weights[1] == "PIP":
+        w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
+        w = w.rename(columns={"gene":"gene_id", "pip":"w", "variant_id":"id"})
+        w.w = 1 - w.w #Less penalty to the more probable snps
+    else:
+        raise RuntimeError("unsupported weights argument")
+    return w
 
+def get_dapg_preparsed(weights):
+    df = Miscellaneous.dapg_preparsed(weights)
+    df.w = 1 - df.w
+    return df
 
 ###############################################################################
 
@@ -223,173 +235,29 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
         c.write(l)
 
 ########################################################################################################################
-class FeaturesHandler:
-    """
-    This class is for loading parquet metadata and genotype files. Most of its
-    functionality is meant to assist in the case that both metadata and genotype
-    are split into 22 files, but it should be robust to the case where there is
-    only one genotype or metadata file.
-    """
-    def __init__(self, features, metadata):
-        """
-        If either argument is a pattern for multiple files, it must be
-        formattable with the argument 'chr'
-        """
-        self.m_features = self.check_if_formattable(features)
-        if self.m_features:
-            self.features = self.format_chrom_file_names(features)
-        else:
-            self.features = [features]
 
-        self.m_metadata = self.check_if_formattable(metadata)
-        if self.m_metadata:
-            self.metadata = self.format_chrom_file_names(metadata)
-        else:
-            self.metadata = [metadata]
 
-    @staticmethod
-    def format_chrom_file_names(s):
-        l = [s.format(chr=i) for i in range(1, 23)]
-        return l
-    @staticmethod
-    def check_if_formattable(s):
-        matches = re.findall('{(.*?)}', s)
-        if len(matches) > 0 and matches[0] == 'chr':
-            return True
-        else:
-            return False
+    # @staticmethod
+    # def _get_dapg_weights(x_weights, id_whitelist=None, pre_parsed=False):
+    #     if pre_parsed:
+    #         weights_df_lst = []
+    #         for i in x_weights:
+    #             weights_df_lst.append(Miscellaneous.dapg_preparsed(i))
+    #         df = pandas.concat(weights_df_lst)
+    #         df.w = 1 - df.w
+    #         return df
+    #     else:
+    #         if id_whitelist is None:
+    #             raise ValueError("Either id_whitelist or pre_parsed must be specified")
+    #         if x_weights[1] == "PIP":
+    #             w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
+    #             w = w.rename(columns={"gene": "gene_id", "pip": "w", "variant_id": "id"})
+    #             w.w = 1 - w.w  # Less penalty to the more probable snps
+    #         else:
+    #             raise RuntimeError("unsupported weights argument")
+    #         return w
 
-    def load_metadata(self, whitelist=None):
-        df_lst = []
-        for i in self.metadata:
-            df_i = pq.read_table(i).to_pandas()
-            if whitelist is not None:
-                df_i = df_i[df_i.id.isin(whitelist)]
-            df_lst.append(df_i)
-        return pandas.concat(df_lst)
 
-    def load_features(self, metadata, individuals):
-        """
-        :param metadata: pandas DataFrame with columns 'variant_id' and
-                'chromosome'
-        :param individuals: list. Individual IDs
-        :return:
-        """
-        if self.m_features:
-            return self._load_features_multiple(metadata, individuals)
-        else:
-            return self._load_features_single(metadata, individuals)
-
-    def _load_features_single(self, metadata, individuals):
-        dd =  Parquet._read(pq.ParquetFile(self.features[0]), columns=[x for x in metadata.id],
-                             specific_individuals=individuals)
-        logging.log(5, "Loaded {} features".format(len(dd) - 1))
-        return dd
-
-    def _load_features_multiple(self, metadata, individuals):
-        df_lst = []
-        for chr, group in metadata.groupby('chromosome'):
-            chr_fp = self.features[chr - 1]
-            chr_vars = list(group.id)
-            chr_vars.append('individual')
-            chr_features = Parquet._read(pq.ParquetFile(chr_fp), chr_vars,
-                                         specific_individuals=individuals,
-                                         to_pandas = True)
-            df_lst.append(chr_features.set_index('individual'))
-        while len(df_lst) > 1:
-            df_lst[0].join(df_lst.pop(), how='inner')
-        logging.log(5, "Loaded {} features".format(df_lst[0].shape[1]))
-        return df_lst[0].reset_index().to_dict(orient='list')
-
-class DataHandler:
-    """
-    This class is meant to handle phenotype data and optional weights.
-    """
-    def __init__(self, data_fp, sub_batches=None, sub_batch=None):
-        self.data = pq.ParquetFile(data_fp)
-        d_names = self.data.metadata.schema.names
-        d_names.remove('individual')
-        self.data_annotation = self._load_data_annotation(d_names,
-                                                          sub_batches,
-                                                          sub_batch)
-
-        self._features_metadata = None
-        self.send_weights = False
-        self._features_weights = None
-        self.features = None
-
-    def _load_data_annotation(self, names, n_batches = None, batch = None):
-        if n_batches is not None and batch is not None:
-            names = numpy.array_split(names, n_batches)[batch]
-        logging.log(9, "Annotations for {} phenos".format(len(names)))
-        annot_dd = {'gene_name': names, 'gene_id': names,
-                    'gene_type': ['NA'] * len(names)}
-        return pandas.DataFrame(annot_dd)
-
-    def add_features_metadata(self, metadata):
-        self._features_metadata = metadata
-        self._merge_metadata_weights()
-
-    def add_features_weights(self, weights_fps, pre_parsed=False,
-                             only_weighted_phenos = False, id_whitelist=None):
-
-        # Columns:  variant_id      w     cluster region  gene_id chromosome
-        weights = self._get_weights(weights_fps, id_whitelist=id_whitelist,
-                               pre_parsed=pre_parsed)[['variant_id', 'w',
-                                                       'gene_id', 'chromosome']]
-        weights = weights.rename(mapper={'variant_id': 'id'}, axis=1)
-        # Only keep the weighted genes
-        ids_from_weights = set(weights.gene_id)
-        ids_from_data = set(self.data_annotation.gene_id)
-        gene_ids = ids_from_weights.intersection(ids_from_data)
-        weights = weights.loc[weights.gene_id.isin(gene_ids)]
-        self.data_annotation = self.data_annotation.loc[self.data_annotation.gene_id.isin(gene_ids)]
-        logging.log(9, "Weights loaded for {} phenos".format(len(self.data_annotation)))
-
-        self._features_weights = weights
-        self._merge_metadata_weights()
-
-    def _merge_metadata_weights(self):
-        if (self._features_weights is not None) and \
-        (self._features_metadata is not None):
-            logging.info( 'Merging geno metadata and weights')
-            f_w = self._features_weights.set_index('id')
-            m = self._features_metadata.set_index('id')
-            cols = list(m.columns)
-            cols.extend(['w', 'gene_id'])
-            f_w = f_w.join(m, how='left', rsuffix='_m')[cols]
-            f_w['id'] = f_w.index
-            self._features_weights = f_w.groupby('gene_id')
-            self.send_weights = True
-
-    def get_features(self, pheno):
-        if self.send_weights:
-            return self._features_weights.get_group(pheno)
-        else:
-            return self._features_metadata[['id', 'chromosome']]
-
-    def load_pheno(self, pheno):
-        return Parquet._read(self.data, [pheno])
-
-    @staticmethod
-    def _get_weights(x_weights, id_whitelist=None, pre_parsed=False):
-        if pre_parsed:
-            weights_df_lst = []
-            for i in x_weights:
-                weights_df_lst.append(Miscellaneous.dapg_preparsed(i))
-            df = pandas.concat(weights_df_lst)
-            df.w = 1 - df.w
-            return df
-        else:
-            if id_whitelist is None:
-                raise ValueError("Either id_whitelist or pre_parsed must be specified")
-            if x_weights[1] == "PIP":
-                w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
-                w = w.rename(columns={"gene": "gene_id", "pip": "w", "variant_id": "id"})
-                w.w = 1 - w.w  # Less penalty to the more probable snps
-            else:
-                raise RuntimeError("unsupported weights argument")
-            return w
 
 ########################################################################################################################
 def run(args):
@@ -408,22 +276,32 @@ def run(args):
 
 
     logging.info("Opening pheno data")
-    d_handler = DataHandler(args.data, args.sub_batches, args.sub_batch)
+    d_handler = Parquet.PhenoDataHandler(args.data, args.sub_batches,
+                                         args.sub_batch)
     # data = pq.ParquetFile(args.data)
     # available_data = {x for x in data.metadata.schema.names}
 
     if args.features_weights:
         logging.info("Loading weights")
-        d_handler.add_features_weights(args.features_weights,
-                                          pre_parsed=True)
+        weights = get_weights(args.features_weights, None)
+        d_handler.add_features_weights(weights)
+
+
+    if args.preparsed_weights:
+        logging.info("Loading weights")
+        weights = get_dapg_preparsed(args.preparsed_weights)
+        d_handler.add_features_weights(weights)
         # x_weights = get_weights(args.features_weights, pre_parsed=True)
         # whitelist = { v for v in x_weights.variant_id}
 
-    f_handler = FeaturesHandler(args.features, args.features_annotation)
+    f_handler = Parquet.MultiFileGenoHandler(args.features,
+                                             args.features_annotation)
     logging.info("Loading geno metadata")
     features_metadata = f_handler.load_metadata()
     d_handler.add_features_metadata(features_metadata)
 
+
+    # TODO: Re -integrate data_annotation
     # if args.data_annotation:
     #     logging.info("Loading data annotation")
     #     data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
@@ -525,6 +403,7 @@ if __name__ == "__main__":
     parser.add_argument("--MAX_M", type=int)
     parser.add_argument("--mode", default="elastic_net", help="'elastic_net' or 'ols'")
     parser.add_argument("--gene_whitelist", nargs="+", default=None)
+    parser.add_argument("--preparsed_weights", help="Pre-parsed dapg weights")
     parser.add_argument("--dont_prune", action="store_true")
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
