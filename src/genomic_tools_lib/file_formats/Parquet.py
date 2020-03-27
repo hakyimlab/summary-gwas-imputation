@@ -5,6 +5,7 @@ import pandas
 import pyarrow as pa
 import pyarrow.parquet as pq
 import numpy
+import re
 
 from ..individual_data import Study, Genotype
 from ..DataSink import DataFrameSink
@@ -393,7 +394,7 @@ class PhenoDataHandler:
         self.data = pq.ParquetFile(data_fp)
         d_names = self.data.metadata.schema.names
         d_names.remove('individual')
-        if data_annotation is None:
+        if data_annotation is not None:
             self.data_annotation = data_annotation
         else:
             self.data_annotation = self._load_da_manual(sub_batches,
