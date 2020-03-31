@@ -38,7 +38,7 @@ def _additional_stats(n="NA", n_indep="NA", most_extreme_z="NA"):
     return (n, n_indep, most_extreme_z)
 
 def _result(variant, z, status):
-    _r = (variant.rsid, variant.id, variant.chromosome, variant.position, variant.non_effect_allele, variant.effect_allele, variant.effect_allele_frequency, z, None, status)
+    _r = (variant.rsid, variant.id, variant.chromosome, variant.position, variant.effect_allele, variant.non_effect_allele, variant.effect_allele_frequency, z, None, status)
     return _r
 
 def _freq_filter(d, freq_filter):
