@@ -200,7 +200,7 @@ def _read(file, columns=None, skip_individuals=False, to_pandas=False, specific_
     if to_pandas:
         v = v.to_pandas()
         if specific_individuals is not None:
-            indexes = set(specific_individuals)
+            indexes = { str(i) for i in specific_individuals}
             v = v.loc[v.individual.isin(indexes)]
     else:
         if specific_individuals:
@@ -359,12 +359,12 @@ class MultiFileGenoHandler:
 
     def _load_features_multiple(self, metadata, individuals, pandas):
         df_lst = []
+        i_ = list(individuals)
         for chr, group in metadata.groupby('chromosome'):
             chr_fp = self.features[chr - 1]
             chr_vars = list(group.id)
-            chr_vars.append('individual')
             chr_features = _read(pq.ParquetFile(chr_fp), chr_vars,
-                                         specific_individuals=individuals,
+                                         specific_individuals=i_,
                                          to_pandas = True)
             df_lst.append(chr_features.set_index('individual'))
         while len(df_lst) > 1:
