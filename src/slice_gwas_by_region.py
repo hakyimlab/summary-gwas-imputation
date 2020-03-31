@@ -13,6 +13,8 @@ def run(args):
         logging.info("%s exists. Nope.", args.output)
         return
 
+    Utilities.ensure_requisite_folders(args.output)
+
     logging.info("Loading regions")
     regions = pandas.read_table(args.region_file).rename(columns={"chr":"chromosome"})
     regions.dropna(inplace=True)

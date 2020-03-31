@@ -102,10 +102,13 @@ def sort(d):
 
 def fill_column_to_median(d, column, dtype=None):
     c = d[column]
-    m = c[~c.isna()].median()
-    d.loc[c.isna(), column] = m
-    if dtype:
-        d[column] = d[column].astype(dtype)
+    if c[c.isna()].shape[0] == c.shape[0]:
+        logging.info("Warning: column %s has no defined values", column)
+    else:
+        m = c[~c.isna()].median()
+        d.loc[c.isna(), column] = m
+        if dtype:
+            d[column] = d[column].astype(dtype)
     return d
 
 def entries_for_window(chromosome, window_start, window_end, metadata):

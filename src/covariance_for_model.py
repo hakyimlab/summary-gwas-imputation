@@ -16,11 +16,15 @@ from genomic_tools_lib.miscellaneous import matrices, PandasHelpers
 from genomic_tools_lib.file_formats import Parquet
 
 def get_file_map(args):
+    logging.log(9, "Loading parquet files")
     r = re.compile(args.parquet_genotype_pattern)
     files = os.listdir(args.parquet_genotype_folder)
     files = {int(r.search(f).groups()[0]):os.path.join(args.parquet_genotype_folder, f) for f in files if r.search(f)}
     p = {}
-    for k,v in files.items():
+    keys = sorted(files.keys())
+    for k in files.keys():
+        v = files[k]
+        logging.log(9, "Loading %i:%s", k, v)
         g = pq.ParquetFile(v)
         p[k] = g
     return p
