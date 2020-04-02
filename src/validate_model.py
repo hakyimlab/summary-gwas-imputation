@@ -14,6 +14,7 @@ import statsmodels.formula.api as smf
 from sklearn.model_selection import KFold
 from sklearn.metrics import r2_score
 from timeit import default_timer as timer
+from scipy.stats.stats import pearsonr
 
 import pyarrow.parquet as pq
 
@@ -43,13 +44,17 @@ def predict(X, weights):
     pass
 
 def performance_measures(y_true, y_pred):
-    pass
+    score = r2_score(y_true, y_pred)
+    correlation = pearsonr(y_true, y_pred)[0]
+    return {'r2_score': score, 'correlation': correlation}
 
 
 def load_weights(fp):
-    return pandas.read_csv(fp, sep = "\t")
+    d = pandas.read_csv(fp, sep = "\t")
+    d = d.rename(mapper={'varID': 'id', 'weight':'w'}, axis = 1)
+    return d
 
-def validate(pheno, f_handler, d_handler, individuals):
+def validate(pheno, f_handler, d_handler, individuals, out_f):
     """
 
     :param pheno: str. Pheno name
@@ -63,22 +68,28 @@ def validate(pheno, f_handler, d_handler, individuals):
 
     # individuals in the rows
     geno_data = f_handler.load_features(features_weights, individuals, pandas=True)
-    geno_data = geno_data.set_index('individual').reindex(pheno_data.index)
+    geno_data = geno_data.reindex(pheno_data.index.astype(str))
+
+
 
     y_true = numpy.array(pheno_data[pheno])
     X = numpy.array(geno_data)
-
+#    print(X.shape)
+#    print(X[:10])
     features_weights = features_weights.reindex(geno_data.columns)
     beta = numpy.array(features_weights.w)
     y_pred = numpy.dot(X, beta)
+    try:
+        dd = performance_measures(y_true, y_pred)
+    except ValueError:
+        logging.log(8, "Value Error for pheno {}. This indicates presence of NAs or infinitys".format(pheno))
+        dd = {'r2_score': 'NA', 'correlation': 'NA'}
+    dd['pheno'] = pheno
+    writer(out_f, dd)
 
-    return None
-
-
-
-
-
-
+def writer(f, d):
+    fmt_str = "{pheno}\t{r2_score}\t{correlation}\n"
+    f.write(fmt_str.format(**d))
 
 def run(args):
     start = timer()
@@ -96,28 +107,33 @@ def run(args):
     logging.info("Loading weights")
     weights = load_weights(args.model_weights)
     var_lst = list(weights.id)
-    d_handler.add_features_weights(weights)
+    d_handler.add_features_weights(weights, pheno_col = 'gene')
 
 
 
     logging.info("Opening geno metadata")
     f_handler = Parquet.MultiFileGenoHandler(args.features,
-                                             args.features_metadata)
+                                             args.features_annotation)
     features_metadata = f_handler.load_metadata(whitelist=var_lst)
 
+    d_handler.add_features_metadata(features_metadata)
 
 
-    results_cols = ['pheno', 'r2', 'correlation']
+    results_cols = ['pheno', 'r2_score', 'correlation']
     results_header = "\t".join(results_cols) + "\n"
     with open(args.out_fp, 'w') as f:
         f.write(results_header)
 
     n_phenos = len(d_handler.data_annotation)
-    for i, pheno in enumerate(d_handler.data_annotation.gene_id.unique()):
-        logging.log(9, "processing %i/%i:%s", i+1, n_phenos, pheno)
+    with open(args.out_fp, 'w') as f:
+        f.write(results_header)
+        for i, pheno in enumerate(d_handler.data_annotation.gene_id.unique()):
+            logging.log(9, "processing %i/%i:%s", i+1, n_phenos, pheno)
 
-        results = validate(pheno, f_handler, d_handler, individuals)
+            validate(pheno, f_handler, d_handler, individuals, f)
 
+    t = timer() - start
+    logging.info("Finished in {:.2f} seconds".format(t))
 
         # weights_df, pheno_series = data_generator.get_pheno_model(i, pheno_map.map_pheno(i))
         # dm, rsids = data_generator.get_design_matrix(i)
