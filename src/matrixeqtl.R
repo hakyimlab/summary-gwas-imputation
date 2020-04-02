@@ -30,7 +30,7 @@ load_regions <- function(fp, chr_){
 mutate_cond <- function(.data, condition, ..., envir = parent.frame()) {
   # MANY THANKS to StackOverflow user G. Grothendieck for this code.
   # https://stackoverflow.com/questions/34096162/dplyr-mutate-replace-several-columns-on-a-subset-of-rows
-  condition <- eval(substitute(condition), .data, envir)
+  condition <- eval(substitute(condition), .data, envir)q
   .data[condition, ] <- .data[condition, ] %>% mutate(...)
   .data
 }
