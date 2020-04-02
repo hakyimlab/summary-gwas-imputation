@@ -65,7 +65,7 @@ class RContext:
 
 class PythonContext:
     def __init__(self, pheno_fp, annotation_fp, geno_fp, chr,
-                 region_fp=None, sample_size = '908'):
+                 region_fp=None, sample_size = '908', max_r = None):
         # args.pheno, args.annotation, args.chr, args.geno,
         #                               args.region
         self.SAMPLE_SIZE = sample_size
@@ -82,6 +82,10 @@ class PythonContext:
         self.region_index = 0
         self.get_region = self._get_next_region
         self.annotations = self._load_annotations(annotation_fp)
+        if max_r is None:
+            self.MAX_R = len(self.annotations.region_id.unique())
+        else:
+            self.MAX_R = max_r
 
     def _load_regions(self, fp, chr):
         if fp is None:
@@ -136,7 +140,7 @@ class PythonContext:
                               specific_individuals=self.individuals,
                               to_pandas=True)
 
-            if self.region_index + 1 == len(self.regions):
+            if self.region_index + 1 == self.MAX_R:
                 self.region_index = None
             else:
                 self.region_index += 1
