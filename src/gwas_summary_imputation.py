@@ -57,10 +57,8 @@ def run(args):
     start = timer()
     logging.info("Beginning process")
     if args.by_region_file:
-        logging.info("Running by region")
         results = run_by_region(args)
     else:
-        logging.info("Running by variant")
         results = run_by_variant(args)
 
     Utilities.ensure_requisite_folders(args.output)
