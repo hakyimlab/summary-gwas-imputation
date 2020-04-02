@@ -3,24 +3,21 @@ import logging
 from timeit import default_timer as timer
 from pyarrow import parquet as pq
 import pandas
+import numpy
 import re
 import sys
 import rpy2.robjects as robjects
 from rpy2.robjects import pandas2ri
 import subprocess
 from genomic_tools_lib import Logging
+from genomic_tools_lib.file_formats import Parquet
 
 
 class RContext:
-    def __init__(self, pheno_fp, annotation_fp, chr, geno_fp):
-        self.RScript = os.path.join(os.path.dirname(__file__), 'matrix_eQTL.R')
-        logging.log(5, "Pheno fp: {}".format(pheno_fp))
-        logging.log(5, "Geno fp: {}".format(geno_fp))
-        logging.log(5, "Annotation fp: {}".format(annotation_fp))
+    def __init__(self, pheno_dd):
+        self.RScript = os.path.join(os.path.dirname(__file__), 'matrixeqtl.R')
         self._init_R()
-        self.init_lst = self._create_init_data(pheno_fp, annotation_fp, chr,
-                                               geno_fp)
-
+        self.p_mat = self._to_rpy2(pheno_dd)
 
     def _init_R(self):
         R = robjects.r
@@ -33,55 +30,68 @@ class RContext:
         logging.log(9, "Loaded libraries and functions into R.")
         self.R = R
         self._globalenv = robjects.globalenv
-        self._init_f = self._globalenv['init_data']
         self._summ_stats_f = self._globalenv['run_summ_stats']
 
-
-    def _create_init_data(self, pheno, annotation, chr, geno):
-        logging.log(9, "Initializing data in R")
-        init_lst = self._init_f(pheno, chr, geno)
-        logging.log(9, "R data has been initialized.")
-        return init_lst
-
-    def _rpy2_to_pandas(self, df):
+    @staticmethod
+    def _rpy2_to_pandas(df):
         logging.log(5, "Beginning conversion R -> Pandas")
-#        with localconverter(robjects.default_converter + pandas2ri.converter):
+        #        with localconverter(robjects.default_converter + pandas2ri.converter):
         df_pd = robjects.conversion.rpy2py(df)
         logging.log(5, "Finished conversion R -> Pandas")
         return df_pd
 
+    @staticmethod
+    def _to_rpy2(dd):
+        individuals = dd['individual']
+        names = list(dd.keys())
+        names.remove('individual')
+        x = numpy.array(dd[v] for v in names)
+        dimnames = robjects.ListVector([(1, robjects.StrVector(individuals)),
+                                        (2, robjects.StrVector(names))])
+        x = robjects.r["matrix"](robjects.FloatVector(x.flatten()),
+                                 ncol=len(individuals), dimnames=dimnames)
+        return x
 
-    def summ_stats(self, variants, i):
+    def summ_stats(self, geno, i):
+        logging.log(5, "Creating R object for genotype")
+        g_mat = self._to_rpy2(geno)
         logging.log(9, "Calculating summary statistics for region {}".format(i))
-        logging.log(5, "Creating a string vector of variants")
-        v_ = robjects.StrVector(variants)
         logging.log(5, "Finished creating string vector. Beginning R call")
-        df_r = self._summ_stats_f(self.init_lst, v_)
+        df_r = self._summ_stats_f(g_mat, self.p_mat)
         logging.log(5, "Finished with R call")
         logging.log(9, "Done calculating summary statistics for region %i " % i)
         return self._rpy2_to_pandas(df_r)
 
+
 class PythonContext:
-    def __init__(self, region_fp, chr, annotation_fp):
-        self.SAMPLE_SIZE = '908'
+    def __init__(self, pheno_fp, annotation_fp, geno_fp, chr,
+                 region_fp=None, sample_size = '908'):
+        # args.pheno, args.annotation, args.chr, args.geno,
+        #                               args.region
+        self.SAMPLE_SIZE = sample_size
         self.GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome',
                           'position', 'effect_allele', 'non_effect_allele',
                           'current_build', 'frequency', 'sample_size', 'zscore',
                           'pvalue', 'effect_size', 'standard_error',
                           'imputation_status', 'n_cases', 'gene', 'region_id']
         self.chr = int(chr)
+        self.pheno = Parquet._read(pq.ParquetFile(pheno_fp))
+        self.geno = pq.ParquetFile(geno_fp)
+        self.individuals = self.pheno['individual']
         self.regions = self._load_regions(region_fp, self.chr)
         self.region_index = 0
         self.get_region = self._get_next_region
         self.annotations = self._load_annotations(annotation_fp)
 
     def _load_regions(self, fp, chr):
-        region_df = pandas.read_table(fp)
-        region_df.columns = [i.strip() for i in region_df.columns]
-        region_df['chromosome'] = region_df['chr'].str.lstrip('chr').astype(int)
-        region_df = region_df.loc[region_df['chromosome'] == chr]
-        logging.log(9, "Loaded {} regions".format(len(region_df)))
-
+        if fp is None:
+            return None
+        else:
+            region_df = pandas.read_table(fp)
+            region_df.columns = [i.strip() for i in region_df.columns]
+            region_df['chromosome'] = region_df['chr'].str.lstrip('chr').astype(int)
+            region_df = region_df.loc[region_df['chromosome'] == chr]
+            logging.log(9, "Loaded {} regions".format(len(region_df)))
         return region_df
 
     def _load_annotations(self, fp):
@@ -97,8 +107,12 @@ class PythonContext:
         metad_df['imputation_status'] = ['NA'] * l
         metad_df['n_cases'] = ['NA'] * l
         metad_df.index = metad_df['variant_id']
+        if self.regions is not None:
+            metad_df['region_id'] = [-1] * l
+            for indx, region_ in self.regions.itertuples():
+                subset = region_.start <= metad_df['position'] < region_.stop
+                metad_df['region_id'][subset] = [indx] * numpy.sum(subset)
         logging.log(9, "Loaded metadata")
-        logging.log(5, "Loaded metadata from {}".format(fp))
         return metad_df
 
     def _get_next_region(self):
@@ -110,17 +124,16 @@ class PythonContext:
         if i is None:
             raise ValueError("get_region() should not be queried now ")
         else:
-            start = self.regions.iloc[i].start
-            stop = self.regions.iloc[i].stop
-            annotations_i = self.annotations.loc[(start <= self.annotations.position) &
-                                                    (self.annotations.position <=
-                                                 stop)]
-            variants = annotations_i.variant_id
+            variants = self.annotations.loc[self.annotations.region_id == i].id.values
+            g = Parquet._read(self.geno, columns=variants,
+                              specific_individuals=self.individuals,
+                              to_pandas=True)
+
             if self.region_index + 1 == len(self.regions):
                 self.region_index = None
             else:
                 self.region_index += 1
-            return variants, i
+            return g, i
 
     def to_gwas(self, df, region):
         df.index = df['snps']
@@ -129,30 +142,34 @@ class PythonContext:
         map_dd = {'snps': 'panel_variant_id',
                   'beta': 'effect_size'}
         df.rename(mapper=map_dd, axis=1, inplace=True)
-        df = df.join(self.annotations, how = 'left')
-        df['region_id'] = [region] * len(df)
+        df = df.join(self.annotations, how='left')
+        # df['region_id'] = [region] * len(df)
         # print(df.columns)
         # print(self.GWAS_COLS)
         return df[self.GWAS_COLS]
 
 
 class FileIO:
-    def __init__(self, out_dir, split_by_pheno=False):
+    def __init__(self, out_dir, _split=None):
         self.out_dir = out_dir
-        if split_by_pheno:
-            self._fname_format = "MatrixEQTL_{pheno}_chr{chr}_block{index}.txt"
+        if _split == 'pheno':
+            self._fname_format = "MatrixEQTL_{g}_chr{chr}.txt"
             self.K_GROUP = 'gene'
-            self.writer = self._write_split_pheno
+            self.writer = self._write_split
             logging.log(9, "Configured to split region files by pheno")
+        elif _split == 'region':
+            self._fname_format = "MatrixEQTL_chr{chr}_block{g}.txt"
+            self.K_GROUP = 'region_id'
+            self.writer = self._write_split
         else:
-            self._fname_format = "MatrixEQTL_chr{chr}_block{index}.txt"
-            self.writer = self._write_region
-            logging.log(9, "Configured to write whole region into one file")
+            self._fname_format = "MatrixEQTL_chr{chr}.txt"
+            self.writer = (lambda d, c
+                           : self._w(d, self._fname_format.format(chr=c)))
 
-    def _write_split_pheno(self, df, chr, indx):
+    def _write_split(self, df, chr):
         df_g = df.groupby(self.K_GROUP)
         for pheno, g in df_g:
-            fp = self._fname_format.format(pheno=pheno, chr=chr, index=indx)
+            fp = self._fname_format.format(chr=chr, g = g)
             self._w(g, fp)
         pass
 
@@ -174,17 +191,6 @@ class FileIO:
         logging.log(9, "Finished with compression")
 
 
-
-
-def convert_files(data_handler, file_handler):
-    for meqtl_data in file_handler.file_name_df.itertuples():
-        meqtl_df = data_handler.loader(meqtl_data.input_path)
-        meqtl_df = meqtl_df.join(data_handler.metadata_df, how='left')
-        data_handler.writer(meqtl_df, meqtl_data.output_path)
-
-
-
-
 def run(args):
     if os.path.exists(args.out_dir):
         logging.error("Output exists. Nope.")
@@ -195,17 +201,18 @@ def run(args):
     start_time = timer()
     logging.log(9, "Beginning summary stat calculation")
     f_handler = FileIO(args.out_dir, args.split_by_pheno)
-    r_context = RContext(args.pheno, args.annotation, args.chr, args.geno)
-    p_context = PythonContext(args.region, args.chr, args.annotation)
+    p_context = PythonContext(args.pheno, args.annotation, args.geno, args.chr,
+                              args.region)
+    r_context = RContext(p_context.pheno)
     while p_context.region_index is not None:
-        variants, i = p_context.get_region()
-        summ_stats = r_context.summ_stats(variants, i)
+        geno, i = p_context.get_region()
+        summ_stats = r_context.summ_stats(geno, i)
+        print(summ_stats.head())
+        exit(0)
         gwas_results = p_context.to_gwas(summ_stats, i)
-        f_handler.writer(gwas_results, args.chr, i)
+        f_handler.writer(gwas_results, args.chr)
     end_time = timer() - start_time
     logging.log(9, "Finished in {:.2f} seconds".format(end_time))
-
-
 
 
 if __name__ == '__main__':
@@ -214,18 +221,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-out_dir', help="directory for results", required=True)
-    parser.add_argument('-region', help="filepath for regions", required=True)
+    parser.add_argument('--region', help="filepath for regions", required=False)
     parser.add_argument('-chr', help="Chromosome number", type=int,
                         required=True)
     parser.add_argument('-annotation', help="Parquet annotation file",
                         required=True)
     parser.add_argument('-geno', help="Parquet genotype file")
-    parser.add_argument('-pheno')
-    parser.add_argument('--split_by_pheno', default=False, action='store_true')
+    parser.add_argument('-pheno', help="Parquet phenotype file")
+    parser.add_argument('--out_split_by', help="What should output be split by?"
+                                               " Options are 'region' or "
+                                               "'pheno'")
     parser.add_argument('--parsimony', type=int, default=7)
     parser.add_argument('--compress', "Gzip all resulting files after writing",
                         default=False, action='store_true')
-
 
     args = parser.parse_args()
 
