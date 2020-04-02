@@ -36,7 +36,7 @@ class RContext:
     def _rpy2_to_pandas(df):
         logging.log(5, "Beginning conversion R -> Pandas")
         #        with localconverter(robjects.default_converter + pandas2ri.converter):
-        df_pd = robjects.conversion.rpy2py(df)
+        df_pd = pandas2ri.ri2py(df)
         logging.log(5, "Finished conversion R -> Pandas")
         return df_pd
 
@@ -45,12 +45,12 @@ class RContext:
         individuals = dd['individual']
         names = list(dd.keys())
         names.remove('individual')
-        x = numpy.array(dd[v] for v in names)
+        x = numpy.array([dd[v] for v in names])
         dimnames = robjects.ListVector([(1, robjects.StrVector(individuals)),
                                         (2, robjects.StrVector(names))])
-        x = robjects.r["matrix"](robjects.FloatVector(x.flatten()),
-                                 ncol=len(individuals), dimnames=dimnames)
-        return x
+        y = robjects.r["matrix"](robjects.FloatVector(x.flatten()),
+                                 nrow=len(individuals), dimnames=dimnames)
+        return y
 
     def summ_stats(self, geno, i):
         logging.log(5, "Creating R object for genotype")
@@ -106,14 +106,21 @@ class PythonContext:
         metad_df['sample_size'] = [self.SAMPLE_SIZE] * l
         metad_df['imputation_status'] = ['NA'] * l
         metad_df['n_cases'] = ['NA'] * l
-        metad_df.index = metad_df['variant_id']
+        cols = list(metad_df.columns)
+        cols.append('region_id')
+        m_df = pandas.DataFrame(columns = cols)
         if self.regions is not None:
             metad_df['region_id'] = [-1] * l
-            for indx, region_ in self.regions.itertuples():
-                subset = region_.start <= metad_df['position'] < region_.stop
-                metad_df['region_id'][subset] = [indx] * numpy.sum(subset)
+            for indx, region_ in enumerate(self.regions.itertuples()):
+                subset = metad_df[(metad_df['position'] < region_.stop) &
+                                      (metad_df['position'] >= region_.start)]
+                subset.loc[:,'region_id'] = [indx] * len(subset)
+                m_df = m_df.append(subset)
+        else:
+            metad_df['region_id'] = [0] * len(metad_df)
+            m_df = metad_df
         logging.log(9, "Loaded metadata")
-        return metad_df
+        return m_df
 
     def _get_next_region(self):
         """
@@ -124,7 +131,7 @@ class PythonContext:
         if i is None:
             raise ValueError("get_region() should not be queried now ")
         else:
-            variants = self.annotations.loc[self.annotations.region_id == i].id.values
+            variants = self.annotations.loc[self.annotations.region_id == i].variant_id.values
             g = Parquet._read(self.geno, columns=variants,
                               specific_individuals=self.individuals,
                               to_pandas=True)
@@ -135,7 +142,7 @@ class PythonContext:
                 self.region_index += 1
             return g, i
 
-    def to_gwas(self, df, region):
+    def to_gwas(self, df):
         df.index = df['snps']
         df['standard_error'] = df['beta'] / df['statistic']
         df['zscore'] = df['statistic']  # TODO
@@ -200,17 +207,17 @@ def run(args):
 
     start_time = timer()
     logging.log(9, "Beginning summary stat calculation")
-    f_handler = FileIO(args.out_dir, args.split_by_pheno)
+    f_handler = FileIO(args.out_dir, args.out_split_by)
     p_context = PythonContext(args.pheno, args.annotation, args.geno, args.chr,
                               args.region)
     r_context = RContext(p_context.pheno)
+    ss_df = pandas.DataFrame(columns=['snps', 'gene', 'statistic', 'pvalue', 'FDR', 'beta'])
     while p_context.region_index is not None:
         geno, i = p_context.get_region()
         summ_stats = r_context.summ_stats(geno, i)
-        print(summ_stats.head())
-        exit(0)
-        gwas_results = p_context.to_gwas(summ_stats, i)
-        f_handler.writer(gwas_results, args.chr)
+        ss_df = ss_df.append(summ_stats)
+    gwas_results = p_context.to_gwas(ss_df)
+    f_handler.writer(gwas_results, args.chr)
     end_time = timer() - start_time
     logging.log(9, "Finished in {:.2f} seconds".format(end_time))
 
@@ -221,7 +228,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-out_dir', help="directory for results", required=True)
-    parser.add_argument('--region', help="filepath for regions", required=False)
+    parser.add_argument('-region', help="filepath for regions", required=False)
     parser.add_argument('-chr', help="Chromosome number", type=int,
                         required=True)
     parser.add_argument('-annotation', help="Parquet annotation file",
@@ -232,7 +239,7 @@ if __name__ == '__main__':
                                                " Options are 'region' or "
                                                "'pheno'")
     parser.add_argument('--parsimony', type=int, default=7)
-    parser.add_argument('--compress', "Gzip all resulting files after writing",
+    parser.add_argument('--compress', help="Gzip all resulting files after writing",
                         default=False, action='store_true')
 
     args = parser.parse_args()
