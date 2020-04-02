@@ -27,7 +27,7 @@ def run(args):
         return
 
     logging.info("Loading snp names")
-    snps = KeyedDataSource.load_data(args.snp_annotation, "variant_id", "rs_id_dbSNP150_GRCh38p7")
+    snps = KeyedDataSource.load_data(args.snp_annotation, "variant_id", args.rsid_column)
 
     logging.info("Loading gene annotation")
     genes, types = _gene_annotation(args.gene_annotation)
@@ -83,6 +83,7 @@ if __name__ == "__main__":
     parser.add_argument("-gene_annotation", help="gtf-like or gencode file")
     parser.add_argument("-snp_zscore_threshold", help="Optional. Keep only snps with good enough (absolute value) marginal zscore", default=None, type=float)
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default=10, type=int)
+    parser.add_argument("-rsid_column", help = "Column name with rsid variant identifiers", default = "rs_id_dbSNP150_GRCh38p7")
     args =parser.parse_args()
     Logging.configure_logging(args.parsimony)
     run(args)

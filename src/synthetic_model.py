@@ -18,7 +18,7 @@ def run(args):
     Utilities.ensure_requisite_folders(args.output)
 
     logging.info("Loading variant annotation")
-    variants = KeyedDataSource.load_data(args.variant_annotation, "variant_id", args.dbsnp_column)
+    variants = KeyedDataSource.load_data(args.variant_annotation, "variant_id", args.rsid_column)
 
     logging.info("Loading data annotation")
     if len(args.data_annotation) == 1:
@@ -69,6 +69,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_filter", nargs="+")
     parser.add_argument("-output")
     parser.add_argument("-parsimony", type=int, default=logging.INFO)
+    parser.add_argument("-rsid_column", help = "Column name with rsid variant identifiers", default = "rs_id_dbSNP150_GRCh38p7")
     args = parser.parse_args()
 
     Logging.configure_logging(args.parsimony)
