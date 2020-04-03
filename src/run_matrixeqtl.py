@@ -65,7 +65,8 @@ class RContext:
 
 class PythonContext:
     def __init__(self, pheno_fp, annotation_fp, geno_fp, chr,
-                 region_fp=None, sample_size = '908', max_r = None):
+                 region_fp=None, sample_size = '908', max_r = None,
+                 n_batches=None, batch=None):
         # args.pheno, args.annotation, args.chr, args.geno,
         #                               args.region
         self.SAMPLE_SIZE = sample_size
@@ -75,7 +76,8 @@ class PythonContext:
                           'pvalue', 'effect_size', 'standard_error',
                           'imputation_status', 'n_cases', 'gene', 'region_id']
         self.chr = int(chr)
-        self.pheno = Parquet._read(pq.ParquetFile(pheno_fp))
+        self._pheno = pq.ParquetFile(pheno_fp)
+        self.pheno = self._load_phenos(n_batches, batch)
         self.geno = pq.ParquetFile(geno_fp)
         self.individuals = self.pheno['individual']
         self.regions = self._load_regions(region_fp, self.chr)
@@ -86,6 +88,16 @@ class PythonContext:
             self.MAX_R = len(self.annotations.region_id.unique())
         else:
             self.MAX_R = max_r
+
+    def _load_phenos(self, n_batches, batch):
+        names = self._pheno.metadata.schema.names
+        print(names[:10])
+        print(names[len(names) - 10:])
+        names.remove('individual')
+        if (n_batches is not None) and (batch is not None):
+            names = numpy.array_split(names, n_batches)[batch]
+        logging.log(9, "Loading data for {} phenos".format(len(names)))
+        return Parquet._read(self._pheno, columns=names)
 
     def _load_regions(self, fp, chr):
         if fp is None:
@@ -213,7 +225,8 @@ def run(args):
     logging.log(9, "Beginning summary stat calculation")
     f_handler = FileIO(args.out_dir, args.out_split_by)
     p_context = PythonContext(args.pheno, args.annotation, args.geno, args.chr,
-                              args.region, max_r=args.MAX_R)
+                              args.region, max_r=args.MAX_R,
+                              n_batches=args.n_batches, batch=args.batch)
     r_context = RContext(p_context.pheno)
     ss_df = pandas.DataFrame(columns=['snps', 'gene', 'statistic', 'pvalue', 'FDR', 'beta'])
     while p_context.region_index is not None:
@@ -243,6 +256,8 @@ if __name__ == '__main__':
     parser.add_argument('--out_split_by', help="What should output be split by?"
                                                " Options are 'region' or "
                                                "'pheno'")
+    parser.add_argument('--n_batches', type=int)
+    parser.add_argument('--batch', type=int)
     parser.add_argument('--parsimony', type=int, default=7)
     parser.add_argument('--compress', help="Gzip all resulting files after writing",
                         default=False, action='store_true')
