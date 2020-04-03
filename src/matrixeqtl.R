@@ -162,7 +162,7 @@ run_summ_stats <- function(geno_matrix, pheno_matrix){
   # geno_matrix: matrix. Individuals in rows
   # pheno_matrix: matrix. Individuals in rows
 
-  # print(paste0(nrow(geno_matrix), nrow(pheno_matrix)))
+  print(paste0(nrow(geno_matrix), nrow(pheno_matrix)))
   genos <- matrix_to_sliceddata(geno_matrix, transpose=TRUE)
   phenos <- matrix_to_sliceddata(pheno_matrix, transpose=TRUE)
   me_new <- Matrix_eQTL_main(genos,

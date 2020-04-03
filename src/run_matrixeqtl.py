@@ -88,6 +88,7 @@ class PythonContext:
             self.MAX_R = len(self.annotations.region_id.unique())
         else:
             self.MAX_R = max_r
+        logging.log(9, "Doing {} regions".format(self.MAX_R))
 
     def _load_phenos(self, n_batches, batch):
         names = self._pheno.metadata.schema.names
@@ -135,6 +136,7 @@ class PythonContext:
         else:
             metad_df['region_id'] = [0] * len(metad_df)
             m_df = metad_df
+        m_df.index = m_df.variant_id
         logging.log(9, "Loaded metadata")
         return m_df
 
@@ -216,8 +218,7 @@ class FileIO:
 
 def run(args):
     if os.path.exists(args.out_dir):
-        logging.error("Output exists. Nope.")
-        return
+        logging.warn("Output dir already exists at {}".format(args.out_dir))
     else:
         os.mkdir(args.out_dir)
 
@@ -235,6 +236,7 @@ def run(args):
         ss_df = ss_df.append(summ_stats)
     logging.info("Finished with calculating summary statistics. Beginning file writing")
     gwas_results = p_context.to_gwas(ss_df)
+    print(gwas_results.head())
     f_handler.writer(gwas_results, args.chr)
     end_time = timer() - start_time
     logging.log(9, "Finished in {:.2f} seconds".format(end_time))
