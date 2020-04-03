@@ -70,7 +70,7 @@ def get_variant_key(args):
     snp = args.snp_annotation_file
     variant_key = None
     if len(snp) == 1:
-        variant_key = KeyedDataSource.load_data(snp[0], "variant_id", "rs_id_dbSNP150_GRCh38p7",
+        variant_key = KeyedDataSource.load_data(snp[0], "variant_id", args.rsid_column,
                                             value_conversion=v_, key_filter=GenotypeUtilities.is_biallelic_variant)
     elif len(snp) == 2:
         if snp[1] == "METADATA":
@@ -111,6 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("-output_prefix", help="Prefix to generate genotype output")
     parser.add_argument("--split_by_chromosome", help="Split the genotype in one file per chromosome", action="store_true")
     parser.add_argument("-parsimony", help="Log parsimony level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default="10")
+    parser.add_argument("-rsid_column", help = "Column name with rsid variant identifiers", default = "rs_id_dbSNP150_GRCh38p7")
 
     args = parser.parse_args()
 
