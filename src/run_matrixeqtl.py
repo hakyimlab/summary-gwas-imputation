@@ -77,9 +77,9 @@ class PythonContext:
                           'imputation_status', 'n_cases', 'gene', 'region_id']
         self.chr = int(chr)
         self._pheno = pq.ParquetFile(pheno_fp)
-        self.pheno = self._load_phenos(n_batches, batch)
         self.geno = pq.ParquetFile(geno_fp)
-        self.individuals = self.pheno['individual']
+        self.individuals = self._find_individuals_intersection()
+        self.pheno = self._load_phenos(n_batches, batch)
         self.regions = self._load_regions(region_fp, self.chr)
         self.region_index = 0
         self.get_region = self._get_next_region
@@ -90,10 +90,19 @@ class PythonContext:
             self.MAX_R = max_r
         logging.log(9, "Doing {} regions".format(self.MAX_R))
 
+    def _find_individuals_intersection(self):
+        pheno_ind_set = self._pheno.read(columns = ['individual'])['individual'].to_pylist()
+
+        geno_ind_set = self.geno.read(columns = ['individual'])['individual'].to_pylist()
+
+        pheno_ind_set = set(pheno_ind_set)
+        geno_ind_set = set(geno_ind_set)
+
+        out_set = pheno_ind_set.intersection(geno_ind_set)
+        return [i for i in out_set]
+
     def _load_phenos(self, n_batches, batch):
         names = self._pheno.metadata.schema.names
-        print(names[:10])
-        print(names[len(names) - 10:])
         names.remove('individual')
         if (n_batches is not None) and (batch is not None):
             names = numpy.array_split(names, n_batches)[batch]
