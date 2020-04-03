@@ -140,7 +140,7 @@ class PythonContext:
                               specific_individuals=self.individuals,
                               to_pandas=True)
 
-            if self.region_index + 1 == self.MAX_R:
+            if self.region_index + 1 >= self.MAX_R:
                 self.region_index = None
             else:
                 self.region_index += 1
@@ -179,8 +179,8 @@ class FileIO:
 
     def _write_split(self, df, chr):
         df_g = df.groupby(self.K_GROUP)
-        for pheno, g in df_g:
-            fp = self._fname_format.format(chr=chr, g = g)
+        for name_, g in df_g:
+            fp = self._fname_format.format(chr=chr, g = name_)
             self._w(g, fp)
         pass
 
@@ -213,13 +213,14 @@ def run(args):
     logging.log(9, "Beginning summary stat calculation")
     f_handler = FileIO(args.out_dir, args.out_split_by)
     p_context = PythonContext(args.pheno, args.annotation, args.geno, args.chr,
-                              args.region)
+                              args.region, max_r=args.MAX_R)
     r_context = RContext(p_context.pheno)
     ss_df = pandas.DataFrame(columns=['snps', 'gene', 'statistic', 'pvalue', 'FDR', 'beta'])
     while p_context.region_index is not None:
         geno, i = p_context.get_region()
         summ_stats = r_context.summ_stats(geno, i)
         ss_df = ss_df.append(summ_stats)
+    logging.info("Finished with calculating summary statistics. Beginning file writing")
     gwas_results = p_context.to_gwas(ss_df)
     f_handler.writer(gwas_results, args.chr)
     end_time = timer() - start_time
@@ -245,6 +246,7 @@ if __name__ == '__main__':
     parser.add_argument('--parsimony', type=int, default=7)
     parser.add_argument('--compress', help="Gzip all resulting files after writing",
                         default=False, action='store_true')
+    parser.add_argument('--MAX_R', type=int)
 
     args = parser.parse_args()
 

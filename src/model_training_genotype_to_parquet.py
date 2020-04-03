@@ -70,7 +70,7 @@ def get_variant_key(args):
     snp = args.snp_annotation_file
     variant_key = None
     if len(snp) == 1:
-        variant_key = KeyedDataSource.load_data(snp[0], "variant_id", "rs_id_dbSNP150_GRCh38p7",
+        variant_key = KeyedDataSource.load_data(snp[0], "varID", "rsid_dbSNP150",
                                             value_conversion=v_, key_filter=GenotypeUtilities.is_biallelic_variant)
     elif len(snp) == 2:
         if snp[1] == "METADATA":
