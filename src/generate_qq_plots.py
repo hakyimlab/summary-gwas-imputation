@@ -10,6 +10,7 @@ import rpy2.robjects as robjects
 from rpy2.robjects import pandas2ri
 import subprocess
 from genomic_tools_lib import Logging
+from genomic_tools_lib import Utilities
 from genomic_tools_lib.file_formats import Parquet
 
 
@@ -36,6 +37,7 @@ class RContext:
     def make_plot(self, pvalues, fp, pheno_name, pheno_num):
         pheno_tag = str(pheno_num) + ": " + pheno_name
         pvals_r = robjects.FloatVector(pvalues)
+        logging.log(5, "Beginning R call: {}".format(pheno_tag))
         self._make_plot(pvals_r, fp, pheno_tag)
         logging.log(5, "Plotted {}".format(pheno_tag))
 
@@ -64,17 +66,23 @@ class FileIO:
         for chr in range(1,23):
             fname_chr = fp.format(num=pheno_num, chr=chr)
             try:
-                pvalues = pandas.read_csv(fname_chr,
-                                      usecols=['pvalue']).pvalue.values
+                df = pandas.read_csv(fname_chr, sep = "\t",
+                                      usecols=['pvalue'])
+                pvalues = list(df['pvalue'])
                 all_pvalues.extend(pvalues)
             except FileNotFoundError:
                 logging.warning("SS for pheno num {} and chr {} out of place.".format(pheno_num, chr))
-
+            except ValueError:
+                dd = pandas.read_csv(fname_chr)
+                logging.warning("Bad col names: " + fname_chr)
+                logging.warning(' '.join(list(dd.columns)))
         return all_pvalues
 
     def load_all(self):
         for i, f in self.pheno_name_map.iterrows():
             pvals = self._load_single_pheno(f.pheno_num)
+            if len(pvals) == 0:
+                continue
             out_fp = self.out_name_pattern.format(f.pheno_num)
             yield (pvals, out_fp, f.pheno_name, f.pheno_num)
 
@@ -92,6 +100,7 @@ def load_pheno_map(fp, n_batches=None, batch=None):
     return df
 
 def run(args):
+    Utilities.maybe_create_folder(args.out_dir)
     r_context = RContext()
     name_map = load_pheno_map(args.pheno_map, args.n_batches, args.batch)
     logging.log(9, "Loaded {} phenos".format(len(name_map)))
@@ -110,8 +119,9 @@ if __name__ == '__main__':
     parser.add_argument('--n_batches', type=int,
                         help="Break up pheno_map into n_batches chunks")
     parser.add_argument('--batch', type=int, help="Do this chunk. zero-indexed")
-    parser.add_argument('--parsimony', type=int)
+    parser.add_argument('--parsimony', type=int, default=9)
 
+    args = parser.parse_args()
     Logging.configure_logging(args.parsimony, target=sys.stdout, with_date=True)
     run(args)
 

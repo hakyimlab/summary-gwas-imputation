@@ -59,7 +59,6 @@ class RContext:
         logging.log(5, "Finished creating string vector. Beginning R call")
         df_r = self._summ_stats_f(g_mat, self.p_mat)
         logging.log(5, "Finished with R call")
-        logging.log(9, "Done calculating summary statistics for region %i " % i)
         return self._rpy2_to_pandas(df_r)
 
 
@@ -79,7 +78,7 @@ class PythonContext:
         self._pheno = pq.ParquetFile(pheno_fp)
         self.geno = pq.ParquetFile(geno_fp)
         self.individuals = self._find_individuals_intersection()
-        self.pheno = self._load_phenos(n_batches, batch)
+        self.pheno = self._load_phenos(self.individuals, n_batches, batch)
         self.regions = self._load_regions(region_fp, self.chr)
         self.region_index = 0
         self.get_region = self._get_next_region
@@ -91,23 +90,23 @@ class PythonContext:
         logging.log(9, "Doing {} regions".format(self.MAX_R))
 
     def _find_individuals_intersection(self):
-        pheno_ind_set = self._pheno.read(columns = ['individual'])['individual'].to_pylist()
+        pheno_ind_set = self._pheno.read(columns = ['individual'])[0].to_pylist()
+        geno_ind_set = self.geno.read(columns = ['individual'])[0].to_pylist()
 
-        geno_ind_set = self.geno.read(columns = ['individual'])['individual'].to_pylist()
-
-        pheno_ind_set = set(pheno_ind_set)
-        geno_ind_set = set(geno_ind_set)
+        pheno_ind_set = { str(i) for i in pheno_ind_set }
+        geno_ind_set = { str(i) for i in geno_ind_set }
 
         out_set = pheno_ind_set.intersection(geno_ind_set)
+        logging.log(9, "Working with sample size {}".format(len(out_set)))
         return [i for i in out_set]
 
-    def _load_phenos(self, n_batches, batch):
+    def _load_phenos(self, individuals, n_batches, batch):
         names = self._pheno.metadata.schema.names
         names.remove('individual')
         if (n_batches is not None) and (batch is not None):
             names = numpy.array_split(names, n_batches)[batch]
         logging.log(9, "Loading data for {} phenos".format(len(names)))
-        return Parquet._read(self._pheno, columns=names)
+        return Parquet._read(self._pheno, columns=names, specific_individuals=individuals)
 
     def _load_regions(self, fp, chr):
         if fp is None:
@@ -159,6 +158,7 @@ class PythonContext:
             raise ValueError("get_region() should not be queried now ")
         else:
             variants = self.annotations.loc[self.annotations.region_id == i].variant_id.values
+            print(variants[:10])
             g = Parquet._read(self.geno, columns=variants,
                               specific_individuals=self.individuals,
                               to_pandas=True)
@@ -167,7 +167,13 @@ class PythonContext:
                 self.region_index = None
             else:
                 self.region_index += 1
-            return g, i
+            pp = [ x for x in g.keys()]
+            if len(pp) > 1:
+                logging.log(9, "Region {}: Length of dict is {}".format(i, len(pp)))
+                return g, i
+            else:
+                logging.warning("Empty region: {}".format(i))
+                return self._get_next_region()
 
     def to_gwas(self, df):
         df.index = df['snps']
@@ -232,7 +238,7 @@ def run(args):
         os.mkdir(args.out_dir)
 
     start_time = timer()
-    logging.log(9, "Beginning summary stat calculation")
+    logging.info("Beginning summary stat calculation")
     f_handler = FileIO(args.out_dir, args.out_split_by)
     p_context = PythonContext(args.pheno, args.annotation, args.geno, args.chr,
                               args.region, max_r=args.MAX_R,
