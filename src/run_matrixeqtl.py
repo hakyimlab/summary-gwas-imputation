@@ -137,16 +137,13 @@ class PythonContext:
         if self.regions is not None:
             metad_df['region_id'] = [-1] * l
             for indx, region_ in enumerate(self.regions.itertuples()):
-                subset = metad_df[(metad_df['position'] < region_.stop) &
-                                      (metad_df['position'] >= region_.start)]
-                subset.loc[:,'region_id'] = [indx] * len(subset)
-                m_df = m_df.append(subset)
+                metad_df.loc[(metad_df['position'] < region_.stop) &
+                                      (metad_df['position'] >= region_.start), 'region_id'] = indx
         else:
             metad_df['region_id'] = [0] * len(metad_df)
-            m_df = metad_df
-        m_df.index = m_df.variant_id
+        metad_df.index = metad_df.variant_id
         logging.log(9, "Loaded metadata")
-        return m_df
+        return metad_df
 
     def _get_next_region(self):
         """
@@ -155,21 +152,26 @@ class PythonContext:
         """
         i = self.region_index
         if i is None:
-            raise ValueError("get_region() should not be queried now ")
+            return None, None
         else:
-            variants = self.annotations.loc[self.annotations.region_id == i].variant_id.values
-            print(variants[:10])
-            g = Parquet._read(self.geno, columns=variants,
+            variants = self.annotations.loc[self.annotations.region_id == i].variant_id.unique()
+            variants = list(variants)
+            try:
+                g = Parquet._read(self.geno, columns=variants,
                               specific_individuals=self.individuals,
-                              to_pandas=True)
-
+                              to_pandas=False)
+            except ValueError:
+                print(len(variants))
+                var_set = set(variants)
+                print(len(var_set))
+              #  print([x for x in g.metadata.schema.names])
+                exit(1)
             if self.region_index + 1 >= self.MAX_R:
                 self.region_index = None
             else:
                 self.region_index += 1
             pp = [ x for x in g.keys()]
             if len(pp) > 1:
-                logging.log(9, "Region {}: Length of dict is {}".format(i, len(pp)))
                 return g, i
             else:
                 logging.warning("Empty region: {}".format(i))
@@ -247,6 +249,8 @@ def run(args):
     ss_df = pandas.DataFrame(columns=['snps', 'gene', 'statistic', 'pvalue', 'FDR', 'beta'])
     while p_context.region_index is not None:
         geno, i = p_context.get_region()
+        if i is None:
+            continue
         summ_stats = r_context.summ_stats(geno, i)
         ss_df = ss_df.append(summ_stats)
     logging.info("Finished with calculating summary statistics. Beginning file writing")

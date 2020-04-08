@@ -32,12 +32,13 @@ class RContext:
         logging.log(9, "Loaded libraries and functions into R.")
         self.R = R
         self._globalenv = robjects.globalenv
-        self._make_plot = self._globalenv['make_pval_plot']
+        self._make_plot = self.R['make_pval_plot']
 
     def make_plot(self, pvalues, fp, pheno_name, pheno_num):
         pheno_tag = str(pheno_num) + ": " + pheno_name
         pvals_r = robjects.FloatVector(pvalues)
         logging.log(5, "Beginning R call: {}".format(pheno_tag))
+        logging.log(4, "Number of p_values: {}".format(len(pvals_r)))
         self._make_plot(pvals_r, fp, pheno_tag)
         logging.log(5, "Plotted {}".format(pheno_tag))
 
