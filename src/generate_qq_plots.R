@@ -22,7 +22,10 @@ make_pval_plot <- function(pvalues, fp, pheno_name){
             + labs(title = title_s)
             + scatter_base_theme_())
   log_stdout("Beginning to write plot to the disk")
-  ggsave(fp, plt, height=9.76, width=9.76)
+  png(file=fp)
+  print(plt)
+  dev.off()
+  # ggsave(fp, height=9.76, width=9.76)
 
 }
 
