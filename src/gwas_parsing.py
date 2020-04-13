@@ -245,6 +245,17 @@ def clean_up(d):
         d = Genomics.sort(d)
     return d
 
+def canonical_variant_id(d):
+    cols = ['chromosome', 'position', 'effect_allele', 'non_effect_allele']
+    for i in cols:
+        if i not in d:
+            raise ValueError("To create variant ID need column: {}".format(i))
+
+    d['variant_id'] = ('chr' + d['chromosome'].astype(str) + '_'
+                       + d['position'].astype(str) + "_"
+                       + d['non_effect_allele'] + "_" + d['effect_allele'])
+    return d
+
 def run(args):
     if os.path.exists(args.output):
         logging.info("output path %s exists. Nope.", args.output)
@@ -272,6 +283,10 @@ def run(args):
 
     if args.snp_reference_metadata:
         d = fill_from_metadata(args, d)
+
+    if args.canonical_variant_id:
+        d = canonical_variant_id(d)
+
 
     if args.output_order:
         order = args.output_order
@@ -302,6 +317,7 @@ if __name__ == "__main__":
     parser.add_argument("-output_order", help="Specify output order", nargs='+')
     parser.add_argument("-output", help="Where the output should go")
     parser.add_argument("--keep_all_original_entries", action="store_true")
+    parser.add_argument("--canonical_variant_id", action='store_true')
     parser.add_argument("-verbosity", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
     GWASUtilities.add_gwas_arguments_to_parser(parser)
     args = parser.parse_args()
