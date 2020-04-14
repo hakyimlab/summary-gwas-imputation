@@ -96,6 +96,7 @@ def run(args):
 
     end = timer()
     logging.info("Finished in %s", str(end - start))
+    logging.info("Finish key")
 
 
 if __name__ == "__main__":
