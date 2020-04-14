@@ -91,8 +91,7 @@ def match(source, reference):
     return aligned
 
 def sort(d):
-    chr = [int(x.split("chr")[1]) if "chr" in x else None for x in d.chromosome]
-    d = d.assign(chr = chr)
+    d['chr'] = d['chromosome']
     d = d.sort_values(by=["chr", "position"])
     d.drop("chr", axis=1, inplace=True)
     return d

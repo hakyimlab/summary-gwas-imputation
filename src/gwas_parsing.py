@@ -85,6 +85,8 @@ def _lift(l, chromosome, position):
     try:
         p = int(position)
         l_ = l.convert_coordinate(chromosome, p)
+        if l_ is None:
+            raise ValueError("Chromosome {} and position {}".format(chromosome, position))
         if l_:
             if len(l_) > 1:
                 logging.warning("Liftover with more than one candidate: %s", t.variant_id)
@@ -107,6 +109,8 @@ def liftover(args, d):
 
     d = d.assign(chromosome=new_chromosome)
     d = d.assign(position=new_position)
+    d = d[d.chromosome.astype(str) !="NA"]
+    d = d[d.position.astype(str) != "NA"]
 
     logging.info("%d variants after liftover", d.shape[0])
     return d
@@ -240,7 +244,10 @@ def fill_from_metadata(args, d):
     return d
 
 def clean_up(d):
-    d = d.assign(sample_size=[int(x) if not math.isnan(x) else "NA" for x in d.sample_size])
+    if 'sample_size' in d:
+        d = d.assign(sample_size=[int(x) if not math.isnan(x) else "NA" for x in d.sample_size])
+    else:
+        d = d.assign(sample_size=['NA'] * d.shape[0])
     if "chromosome" in d.columns.values and "position" in d.columns.values:
         d = Genomics.sort(d)
     return d
@@ -251,7 +258,7 @@ def canonical_variant_id(d):
         if i not in d:
             raise ValueError("To create variant ID need column: {}".format(i))
 
-    d['variant_id'] = ('chr' + d['chromosome'].astype(str) + '_'
+    d['variant_id'] = (d['chromosome'].astype(str) + '_'
                        + d['position'].astype(str) + "_"
                        + d['non_effect_allele'] + "_" + d['effect_allele'])
     return d
@@ -263,6 +270,7 @@ def run(args):
 
     start = timer()
     logging.info("Parsing input GWAS")
+    logging.info("Input file: {}".format(args.gwas_file))
     d = GWAS.load_gwas(args.gwas_file, args.output_column_map,
             force_special_handling=args.force_special_handling, skip_until_header=args.skip_until_header,
             separator=args.separator, handle_empty_columns=args.handle_empty_columns, input_pvalue_fix=args.input_pvalue_fix,
