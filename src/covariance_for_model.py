@@ -39,7 +39,7 @@ def run(args):
     with sqlite3.connect(args.model_db) as connection:
         # Pay heed to the order. This avoids arbitrariness in sqlite3 loading of results.
         extra = pandas.read_sql("SELECT * FROM EXTRA order by gene", connection)
-        extra = extra[extra["n.snps.in.model"] > 0]
+        #extra = extra[extra["n.snps.in.model"] > 0]
 
     individuals = TextFileTools.load_list(args.individuals) if args.individuals else None
 
@@ -79,7 +79,7 @@ def run(args):
                #         gene_d = {w.varID.values[0]:[0,1]}
                #     else:
                     logging.log(9, "No genotype available for %s, skipping",g_)
-                    logging.log('Could not find {}'.format(w.varID.values[:5]))
+                    logging.log(4, 'Could not find {}'.format(w.varID.values[:5]))
                     next
 
                 if args.output_rsids:
