@@ -22,6 +22,7 @@ def get_file_map(args):
     files = {int(r.search(f).groups()[0]):os.path.join(args.parquet_genotype_folder, f) for f in files if r.search(f)}
     p = {}
     for k,v in files.items():
+        logging.log(4, "Parquet file: {}".format(v))
         g = pq.ParquetFile(v)
         p[k] = g
     return p
@@ -77,10 +78,11 @@ def lift_metadata(metadata, lift_fp):
     metadata = metadata[metadata.chromosome.astype(str) != "NA"]
     metadata = metadata[metadata.position.astype(str) != "NA"]
     logging.log(9, "%d variants after liftover", metadata.shape[0])
-    metadata = metadata.rename({'variant_id': 'geno_id'}, axis=1)
+    metadata = metadata.rename({'id': 'geno_id'}, axis=1)
     metadata = canonical_variant_id(metadata, name='model_id')
 
-    return metadata['geno_id', 'model_id']
+    print(metadata.head())
+    return metadata[['geno_id', 'model_id']]
 
 
 
@@ -100,12 +102,14 @@ def load_gene_d(dosage, model_variants, geno_variants=None, individuals=None):
         geno_variants = model_variants
         g_bool = False
     else:
+        logging.log(4, "Using specific geno variants: {}".format(geno_variants[:5]))
         g_bool = True
     if individuals:
         dd = Parquet._read(dosage, columns=geno_variants, specific_individuals=individuals)
         del dd["individual"]
     else:
         dd = Parquet._read(dosage, columns=geno_variants, skip_individuals=True)
+    logging.log(4, "Loaded {} snps before renaming".format(len(dd)))
     if g_bool:
         for i in range(len(geno_variants)):
             dd[model_variants[i]] = dd.pop(geno_variants[i])
@@ -124,8 +128,10 @@ def run(args):
     if args.parquet_metadata is not None and args.metadata_lift is not None:
         logging.info("Loading metadata for liftover")
         metadata = pq.read_table(args.parquet_metadata).to_pandas()
+        metadata['chromosome'] = 'chr' + metadata['chromosome'].astype(str)
         logging.log(9, "%d variants before liftover", metadata.shape[0])
         lifted_variants = lift_metadata(metadata, args.metadata_lift)
+        print(lifted_variants.head())
     else:
         lifted_variants = None
 
@@ -151,8 +157,11 @@ def run(args):
                 gene_d = {}
                 logging.log(9, "Proccessing %i/%i:%s", i+1, extra.shape[0], g_)
                 w = pandas.read_sql("select * from weights where gene = '{}';".format(g_), connection)
+                logging.log(5, "Weights loaded for gene {}: {}".format(g_, w.shape[0]))
                 if lifted_variants is not None:
                     w = w.merge(lifted_variants, left_on='varID', right_on='model_id')
+                    logging.log(5, "Weights after lifted_variants merge: {}".format(w.shape[0]))
+                print(w.head())
                 w['chr'] = [x[0] for x in w['varID'].str.split("_")]
                 w['chr'] = w['chr'].str.lstrip('chr')
                 w = w.groupby('chr')
@@ -164,7 +173,7 @@ def run(args):
                         logging.log(9, "Unsupported chromosome: %s", chr_)
                         continue
                     dosage = file_map[int(chr_)]
-                    if 'geno_id' in w:
+                    if 'geno_id' in w_chr:
                         gene_d.update(load_gene_d(dosage,
                                                   w_chr.varID.values,
                                                   geno_variants=w_chr.geno_id.values,
@@ -177,11 +186,11 @@ def run(args):
                 var_ids = list(gene_d.keys())
                 if len(var_ids) == 0:
                     logging.log(9, "No genotype available for %s, skipping",g_)
-                    logging.log(4, 'Could not find {}'.format(w.varID.values[:5]))
-                    next
+                    logging.log(4, 'Could not find {}'.format(w_chr.varID.values[:5]))
+                    continue
 
                 if args.output_rsids:
-                    ids = [x for x in pandas.DataFrame({"varID": var_ids}).merge(w[["varID", "rsid"]], on="varID").rsid.values]
+                    ids = [x for x in pandas.DataFrame({"varID": var_ids}).merge(w_chr[["varID", "rsid"]], on="varID").rsid.values]
                 else:
                     ids = var_ids
 
