@@ -161,26 +161,22 @@ def run(args):
                 if lifted_variants is not None:
                     w = w.merge(lifted_variants, left_on='varID', right_on='model_id')
                     logging.log(5, "Weights after lifted_variants merge: {}".format(w.shape[0]))
+                else:
+                    w['geno_id'] = w['varID']
                 print(w.head())
                 w['chr'] = [x[0] for x in w['varID'].str.split("_")]
                 w['chr'] = w['chr'].str.lstrip('chr')
-                w = w.groupby('chr')
-                if len(w.groups.keys()) == 0:
+                w_gb = w.copy().groupby('chr')
+                if len(w_gb.groups.keys()) == 0:
                     logging.log(9, "No chromosomes found for %s, skipping", g_)
                     continue
-                for chr_, w_chr in w:
+                for chr_, w_chr in w_gb:
                     if not n_.search(chr_):
                         logging.log(9, "Unsupported chromosome: %s", chr_)
                         continue
                     dosage = file_map[int(chr_)]
-                    if 'geno_id' in w_chr:
-                        gene_d.update(load_gene_d(dosage,
-                                                  w_chr.varID.values,
-                                                  geno_variants=w_chr.geno_id.values,
-                                                  individuals=individuals))
-                    else:
-                        gene_d.update(load_gene_d(dosage,
-                                                  w_chr.varID.values,
+                    gene_d.update(load_gene_d(dosage,
+                                                  w_chr.geno_id.values,
                                                   individuals=individuals))
 
                 var_ids = list(gene_d.keys())
@@ -190,9 +186,10 @@ def run(args):
                     continue
 
                 if args.output_rsids:
-                    ids = [x for x in pandas.DataFrame({"varID": var_ids}).merge(w_chr[["varID", "rsid"]], on="varID").rsid.values]
+                    k = 'rsid'
                 else:
-                    ids = var_ids
+                    k = 'varID'
+                ids = [x for x in pandas.DataFrame({"geno_id": var_ids}).merge(w[["geno_id", k]], on="geno_id")[k].values]
 
                 c = numpy.cov([gene_d[x] for x in var_ids])
                 c = matrices._flatten_matrix_data([(g_, ids, c)])
