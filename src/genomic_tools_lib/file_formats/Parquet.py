@@ -410,10 +410,10 @@ class PhenoDataHandler:
         if (n_batches is not None) and (batch is not None):
             names = numpy.array_split(names, n_batches)[batch]
 
-        logging.log(9, "Annotations for {} phenos".format(len(names)))
         annot_dd = {'gene_name': names, 'gene_id': names,
                     'gene_type': ['NA'] * len(names)}
-        return pandas.DataFrame(annot_dd)
+        df = pandas.DataFrame(annot_dd)
+        return df
 
     def add_features_metadata(self, metadata):
         """

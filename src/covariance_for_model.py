@@ -97,22 +97,13 @@ def canonical_variant_id(d, name='id', allele_0='allele_0', allele_1='allele_1')
                        + d[allele_0] + "_" + d[allele_1])
     return d
 
-def load_gene_d(dosage, model_variants, geno_variants=None, individuals=None):
-    if geno_variants is None:
-        geno_variants = model_variants
-        g_bool = False
-    else:
-        logging.log(4, "Using specific geno variants: {}".format(geno_variants[:5]))
-        g_bool = True
+def load_gene_d(dosage, variants, individuals=None):
     if individuals:
-        dd = Parquet._read(dosage, columns=geno_variants, specific_individuals=individuals)
+        dd = Parquet._read(dosage, columns=variants, specific_individuals=individuals)
         del dd["individual"]
     else:
-        dd = Parquet._read(dosage, columns=geno_variants, skip_individuals=True)
-    logging.log(4, "Loaded {} snps before renaming".format(len(dd)))
-    if g_bool:
-        for i in range(len(geno_variants)):
-            dd[model_variants[i]] = dd.pop(geno_variants[i])
+        dd = Parquet._read(dosage, columns=variants, skip_individuals=True)
+    logging.log(4, "Loaded {} snps".format(len(dd)))
 
     return dd
 
@@ -131,7 +122,6 @@ def run(args):
         metadata['chromosome'] = 'chr' + metadata['chromosome'].astype(str)
         logging.log(9, "%d variants before liftover", metadata.shape[0])
         lifted_variants = lift_metadata(metadata, args.metadata_lift)
-        print(lifted_variants.head())
     else:
         lifted_variants = None
 

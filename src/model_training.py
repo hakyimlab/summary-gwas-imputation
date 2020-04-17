@@ -198,6 +198,10 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
     # features_data_ = Parquet._read(features, [x for x in features_.id.values],
     #                                specific_individuals=[x for x in d_["individual"]])
 
+#    assert features_.shape[0] == len(features_data_), "Features {}, data {}".format(features_.shape[0], len(features_data_))
+#    loaded_features = [v for v in features_data_.keys()]
+#    loaded_features.remove('individual')
+#    features_ = features_.
     logging.log(8, "training")
     weights, summary = train(features_data_, features_, d_, data_annotation_, x_w, not args.dont_prune, nested_folds)
 
@@ -276,8 +280,8 @@ def run(args):
 
 
     logging.info("Opening pheno data")
-    d_handler = Parquet.PhenoDataHandler(args.data, args.sub_batches,
-                                         args.sub_batch)
+    d_handler = Parquet.PhenoDataHandler(args.data, sub_batches=args.sub_batches,
+                                         sub_batch=args.sub_batch)
     # data = pq.ParquetFile(args.data)
     # available_data = {x for x in data.metadata.schema.names}
 
@@ -288,7 +292,7 @@ def run(args):
 
 
     if args.preparsed_weights:
-        logging.info("Loading weights")
+        logging.info("Loading preparsed weights")
         weights = get_dapg_preparsed(args.preparsed_weights)
         d_handler.add_features_weights(weights)
         # x_weights = get_weights(args.features_weights, pre_parsed=True)
