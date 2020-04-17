@@ -194,7 +194,7 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
         logging.log(9, "No features available")
         return
 
-    features_data_ = features_handler.load_features(features_, [x for x in d_['individual']])
+    features_data_, features_ = features_handler.load_features(features_, [x for x in d_['individual']])
     # features_data_ = Parquet._read(features, [x for x in features_.id.values],
     #                                specific_individuals=[x for x in d_["individual"]])
 

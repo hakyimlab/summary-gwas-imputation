@@ -345,9 +345,25 @@ class MultiFileGenoHandler:
         :return: dict.
         """
         if self.m_features:
-            return self._load_features_multiple(metadata, individuals, pandas)
+            d_ = self._load_features_multiple(metadata, individuals, pandas)
         else:
-            return self._load_features_single(metadata, individuals, pandas)
+            d_ = self._load_features_single(metadata, individuals, pandas)
+        n_requested = metadata.shape[0]
+        n_loaded = len(d_) - 1
+        if n_requested == n_loaded:
+            logging.log(5, "Loaded {} features".format(n_loaded))
+            return (d_, metadata)
+        else:
+            s = "Requested {} features and loaded {}".format(n_requested,
+                                                             n_loaded)
+            logging.warning(s)
+            if pandas:
+                loaded_features = set(d_.columns)
+            else:
+                loaded_features = {v for v in d_.keys()}
+            loaded_features.remove('individual')
+            loaded_metadata = metadata[metadata.id.isin(loaded_features)]
+            return (d_, loaded_metadata)
 
     def _load_features_single(self, metadata, individuals, pandas):
         dd =  _read(pq.ParquetFile(self.features[0]),
