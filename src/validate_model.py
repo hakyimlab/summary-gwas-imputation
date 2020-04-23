@@ -45,8 +45,8 @@ def predict(X, weights):
 
 def performance_measures(y_true, y_pred):
     score = r2_score(y_true, y_pred)
-    correlation = pearsonr(y_true, y_pred)[0]
-    return {'r2_score': score, 'correlation': correlation}
+    correlation, pval = pearsonr(y_true, y_pred)
+    return {'r2_score': score, 'correlation': correlation, 'correlation_pval':pval} 
 
 
 def load_weights(fp):
@@ -66,16 +66,17 @@ def validate(pheno, f_handler, d_handler, individuals, out_f):
 
     features_weights = d_handler.get_features(pheno)
 
+    features_weights = features_weights.loc[~features_weights.index.duplicated()]
     # individuals in the rows
-    geno_data = f_handler.load_features(features_weights, individuals, pandas=True)
-    geno_data = geno_data.reindex(pheno_data.index.astype(str))
+    geno_data, features_weights = f_handler.load_features(features_weights, individuals, pandas=True)
+    geno_data = geno_data.set_index('individual')
+    geno_data = geno_data.loc[~geno_data.index.duplicated()].reindex(pheno_data.index.astype(str))
 
+    logging.log(5, "Geno data shape: {}, Features shape: {}".format(geno_data.shape, features_weights.shape))
 
 
     y_true = numpy.array(pheno_data[pheno])
     X = numpy.array(geno_data)
-#    print(X.shape)
-#    print(X[:10])
     features_weights = features_weights.reindex(geno_data.columns)
     beta = numpy.array(features_weights.w)
     y_pred = numpy.dot(X, beta)
@@ -83,13 +84,13 @@ def validate(pheno, f_handler, d_handler, individuals, out_f):
         dd = performance_measures(y_true, y_pred)
     except ValueError:
         logging.log(8, "Value Error for pheno {}. This indicates presence of NAs or infinitys".format(pheno))
-        dd = {'r2_score': 'NA', 'correlation': 'NA'}
+        dd = {'r2_score': 'NA', 'correlation': 'NA', 'correlation_pval': 'NA'}
     dd['pheno'] = pheno
     writer(out_f, dd)
 
 def writer(f, d):
-    fmt_str = "{pheno}\t{r2_score}\t{correlation}\n"
-    f.write(fmt_str.format(**d))
+    fmt_str = "{pheno}\t{r2_score}\t{correlation}\t{correlation_pval}\n"
+    f.write(fmt_str.format(**d).encode())
 
 def run(args):
     start = timer()
@@ -119,14 +120,14 @@ def run(args):
     d_handler.add_features_metadata(features_metadata)
 
 
-    results_cols = ['pheno', 'r2_score', 'correlation']
+    results_cols = ['gene', 'r2_score', 'correlation', 'correlation_pval']
     results_header = "\t".join(results_cols) + "\n"
-    with open(args.out_fp, 'w') as f:
-        f.write(results_header)
+#    with open(args.out_fp, 'w') as f:
+#        f.write(results_header)
 
     n_phenos = len(d_handler.data_annotation)
-    with open(args.out_fp, 'w') as f:
-        f.write(results_header)
+    with gzip.open(args.out_fp, 'w') as f:
+        f.write(results_header.encode())
         for i, pheno in enumerate(d_handler.data_annotation.gene_id.unique()):
             logging.log(9, "processing %i/%i:%s", i+1, n_phenos, pheno)
 

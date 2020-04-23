@@ -349,7 +349,10 @@ class MultiFileGenoHandler:
         else:
             d_ = self._load_features_single(metadata, individuals, pandas)
         n_requested = metadata.shape[0]
-        n_loaded = len(d_) - 1
+        if pandas:
+            n_loaded = d_.shape[1] - 1
+        else:
+            n_loaded = len(d_) - 1
         if n_requested == n_loaded:
             logging.log(5, "Loaded {} features".format(n_loaded))
             return (d_, metadata)
@@ -370,7 +373,6 @@ class MultiFileGenoHandler:
                     columns=[x for x in metadata.id],
                     specific_individuals=individuals,
                     to_pandas=pandas)
-        logging.log(5, "Loaded {} features".format(len(dd) - 1))
         return dd
 
     def _load_features_multiple(self, metadata, individuals, pandas):
@@ -384,10 +386,9 @@ class MultiFileGenoHandler:
                                          to_pandas = True)
             df_lst.append(chr_features.set_index('individual'))
         while len(df_lst) > 1:
-            df_lst[0].join(df_lst.pop(), how='inner')
-        logging.log(5, "Loaded {} features".format(df_lst[0].shape[1]))
+            df_lst[0] = df_lst[0].join(df_lst.pop(), how='inner')
         if pandas:
-            return df_lst[0]
+            return df_lst[0].reset_index()
         else:
             return df_lst[0].reset_index().to_dict(orient='list')
 

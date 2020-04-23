@@ -178,7 +178,7 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
     :return:
     """
     gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
-    logging.log(8, "loading phenotype data")
+    logging.log(8, "Loading phenotype data")
     d_ = data_handler.load_pheno(data_annotation_.gene_id)
     # d_ = Parquet._read(data, [data_annotation_.gene_id])
 
@@ -193,6 +193,7 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
     if features_.shape[0] == 0:
         logging.log(9, "No features available")
         return
+    logging.log(8, "Loading genotype data")
 
     features_data_, features_ = features_handler.load_features(features_, [x for x in d_['individual']])
     # features_data_ = Parquet._read(features, [x for x in features_.id.values],
