@@ -387,7 +387,7 @@ class MultiFileGenoHandler:
             df_lst[0].join(df_lst.pop(), how='inner')
         logging.log(5, "Loaded {} features".format(df_lst[0].shape[1]))
         if pandas:
-            return df_lst[0]
+            return df_lst[0].reset_index()
         else:
             return df_lst[0].reset_index().to_dict(orient='list')
 

@@ -61,7 +61,8 @@ def get_dapg_preparsed(weights):
 
 ###############################################################################
 
-def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, nested_folds=10):
+def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_,
+                              x_w=None, prune=True, nested_folds=10, alpha=0.5):
     x = numpy.array([features_data_[v] for v in features_.id.values])
     dimnames = robjects.ListVector(
         [(1, robjects.StrVector(d_["individual"])), (2, robjects.StrVector(features_.id.values))])
@@ -70,9 +71,12 @@ def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_, x
     nested_folds = robjects.FloatVector([nested_folds])
     #py2ri chokes on None.
     if x_w is None:
-        res = train_elastic_net(y, x, n_train_test_folds=nested_folds)
+        res = train_elastic_net(y, x, n_train_test_folds=nested_folds,
+                                alpha=alpha)
     else:
-        res = train_elastic_net(y, x, penalty_factor=x_w, n_train_test_folds=nested_folds)  # observation weights, not explanatory variable weight :( , x_weight = x_w)
+        # observation weights, not explanatory variable weight :( , x_weight = x_w)
+        res = train_elastic_net(y, x, penalty_factor=x_w,
+                                n_train_test_folds=nested_folds, alpha=alpha)
     return pandas2ri.ri2py(res[0]), pandas2ri.ri2py(res[1])
 
 ###############################################################################
@@ -125,7 +129,7 @@ def prune(data):
     return data.drop(discard, axis=1)
 
 
-def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, nested_folds=10):
+def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, nested_folds=10, alpha=0.5):
     ids=[]
     data = {}
     for v in features_.id.values:
@@ -161,7 +165,7 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
 def process(w, s, c, data_handler, data_annotation_, features_handler,
              weights, summary_fields, train, postfix=None,
-            nested_folds=10):
+            nested_folds=10, alpha=0.5):
     """
 
     :param w: weights file handle
@@ -175,8 +179,11 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
     :param train: function. Training function
     :param postfix: int. If doing repeats, this is the repeat number.
     :param nested_folds: int. Number of nested folds.
+    :param alpha: float. Mixing parameter for ElasticNet algorithm
     :return:
     """
+    if alpha is None:
+        alpha = 0.5
     gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
     logging.log(8, "loading phenotype data")
     d_ = data_handler.load_pheno(data_annotation_.gene_id)
@@ -203,7 +210,8 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
 #    loaded_features.remove('individual')
 #    features_ = features_.
     logging.log(8, "training")
-    weights, summary = train(features_data_, features_, d_, data_annotation_, x_w, not args.dont_prune, nested_folds)
+    weights, summary = train(features_data_, features_, d_, data_annotation_,
+                             x_w, not args.dont_prune, nested_folds, alpha)
 
     if weights.shape[0] == 0:
         logging.log(9, "no weights, skipping")
@@ -305,7 +313,7 @@ def run(args):
     d_handler.add_features_metadata(features_metadata)
 
 
-    # TODO: Re -integrate data_annotation
+    # TODO: Re-integrate data_annotation
     # if args.data_annotation:
     #     logging.info("Loading data annotation")
     #     data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
@@ -379,12 +387,12 @@ def run(args):
                             logging.log(9, "%i-th reiteration", j)
                             process(w, s, c, d_handler, data_annotation_,
                                     f_handler, d_handler.send_weights,
-                                    SUMMARY_FIELDS, train, j, args.nested_cv_folds)
+                                    SUMMARY_FIELDS, train, j, args.nested_cv_folds, alpha=args.alpha)
                     else:
                         process(w, s, c, d_handler, data_annotation_,
                                 f_handler, d_handler.send_weights,
                                 SUMMARY_FIELDS, train,
-                                nested_folds=args.nested_cv_folds)
+                                nested_folds=args.nested_cv_folds, alpha=args.alpha)
 
     logging.info("Finished")
 
@@ -413,6 +421,7 @@ if __name__ == "__main__":
     parser.add_argument("-parsimony", default=10, type=int)
     parser.add_argument("--repeat", default=None, type=int)
     parser.add_argument("--nested_cv_folds", default=5, type=int)
+    parser.add_argument("--alpha", default=0.5, type=float)
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony)
 

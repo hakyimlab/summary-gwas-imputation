@@ -115,7 +115,13 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
         penalty_factor = rep(1, ncol(x))
     }
 
-    perf_measures <- nested_cv_elastic_net_perf(x, y, length(y), n_train_test_folds, n_k_folds, alpha, observation_weights, penalty_factor)
+    perf_measures <- nested_cv_elastic_net_perf(x, y,
+                                                length(y),
+                                                n_train_test_folds,
+                                                n_k_folds,
+                                                alpha,
+                                                observation_weights,
+                                                penalty_factor)
 
     R2_avg <- perf_measures$R2_avg
     R2_sd <- perf_measures$R2_sd
@@ -129,7 +135,14 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
 
     cv_fold_ids <- generate_fold_ids(length(y), n_k_folds)
     fit <- tryCatch(
-      cv.glmnet(x, y, nfolds = n_k_folds, alpha = alpha, type.measure='mse', foldid = cv_fold_ids, keep = TRUE, weights = observation_weights, penalty.factor = penalty_factor),
+      cv.glmnet(x, y,
+                nfolds = n_k_folds,
+                alpha = alpha,
+                type.measure='mse',
+                foldid = cv_fold_ids,
+                keep = TRUE,
+                weights = observation_weights,
+                penalty.factor = penalty_factor),
       error = function(cond) {message('Error'); message(geterrmessage()); list()}
     )
 
