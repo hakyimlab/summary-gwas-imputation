@@ -2,6 +2,7 @@ __author__ = "alvaro barbeira"
 import logging
 import pandas
 import gzip
+import re
 from . import PandasHelpers
 
 def discard_gtex_palindromic_variants(d):
@@ -94,7 +95,8 @@ def match(source, reference):
     return aligned
 
 def sort(d):
-    chr = [int(x.split("chr")[1]) if "chr" in x else None for x in d.chromosome]
+    chr_re_ = re.compile("chr(\d+)$")
+    chr = [int(x.split("chr")[1]) if chr_re_.search(x) else None for x in d.chromosome]
     d = d.assign(chr = chr)
     d = d.sort_values(by=["chr", "position"])
     d.drop("chr", axis=1, inplace=True)
