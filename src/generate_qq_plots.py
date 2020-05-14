@@ -108,6 +108,7 @@ def run(args):
     file_handler = FileIO(args.out_dir, args.in_dir, name_map)
     for pvals, fp, pheno_name, pheno_num in file_handler.load_all():
         r_context.make_plot(pvals, fp, pheno_name, pheno_num)
+    logging.info("Finish Key")
 
 
 if __name__ == '__main__':
