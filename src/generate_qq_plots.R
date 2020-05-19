@@ -16,12 +16,12 @@ log_stdout <- function(message, date=TRUE){
 
 #log_stdout("Adding functions to R namespace")
 make_pval_plot <- function(pvalues, fp, pheno_name){
-  log_stdout("Opened make_pval_plot function")
+ # log_stdout("Opened make_pval_plot function")
   title_s <- paste0("Metabolite ", pheno_name)
   plt <- (gg_qqplot(pvalues)
             + labs(title = title_s)
             + scatter_base_theme_())
-  log_stdout("Beginning to write plot to the disk")
+  #log_stdout("Beginning to write plot to the disk")
   png(file=fp)
   print(plt)
   dev.off()
@@ -34,7 +34,7 @@ make_pval_plot <- function(pvalues, fp, pheno_name){
 gg_qqplot <- function(ps, ci = 0.95) {
   # Many thanks to github user slowkow for this function
   # https://gist.github.com/slowkow/9041570
-  log_stdout("Opened gg_qqplot function")
+ # log_stdout("Opened gg_qqplot function")
   n  <- length(ps)
   df <- data.frame(
     observed = -log10(sort(ps)),
