@@ -22,15 +22,33 @@ def inverse_normalize(df):
     quantiles = stats.norm.ppf(rank_df)
     return pandas.DataFrame(quantiles, index=df.index, columns=df.columns)
 
+def same_individuals(c_df, d_df, col='individual'):
+    print(c_df.head())
+    print(d_df.head())
+    c_df = c_df.set_index(col)
+    c_df.index = c_df.index.astype(str)
+    d_df = d_df.set_index(col)
+    d_df.index = d_df.index.astype(str)
+    idx = c_df.index.intersection(d_df.index)
+    c_df = c_df.reindex(idx).reset_index().rename({'index':'individual'},axis=1)
+    d_df = d_df.reindex(idx).reset_index().rename({'index':'individual'},axis=1)
+    return c_df, d_df
+
 def run(args):
     logging.info("Starting")
     Utilities.ensure_requisite_folders(args.output)
 
     logging.info("Read covariate")
     covariate = pq.read_table(args.covariate).to_pandas()
+    covariate = covariate.rename(lambda x: x.replace("-","_"), axis=1)
+    covariate = covariate.dropna()
+    logging.log(7, "{} individuals in covariate file".format(covariate.shape[0]))
     logging.info("Read data")
     data = pq.read_table(args.data).to_pandas()
-
+    data = data.dropna()
+    logging.log(7, "{} individuals in data file".format(data.shape[0]))
+    covariate, data = same_individuals(covariate, data)
+    logging.log(7, "{} and {} individuals after merge".format(covariate.shape[0], data.shape[0]))
     if args.inverse_normalize_data:
         data = inverse_normalize(data)
     logging.info("Processing")

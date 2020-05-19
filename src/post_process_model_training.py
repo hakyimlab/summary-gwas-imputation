@@ -10,40 +10,52 @@ from genomic_tools_lib.miscellaneous import Models
 
 __author__ = "alvaro barbeira"
 
-def _read(folder, pattern):
+def _read(folder, pattern, check=False):
     files = sorted([x for x in os.listdir(folder) if pattern.search(x)])
     files = [os.path.join(folder, x) for x in files]
     r =[]
     for file in files:
         try:
-            r.append(pandas.read_table(file))
+            d = pandas.read_table(file)
+            if check:
+                d = d.drop_duplicates()
+            r.append(d)
         except:
             logging.info("issue opening file %s", file)
     return pandas.concat(r)
 
-def _read_2(input_prefix, stem):
+def _read_2(input_prefix, stem, check=False):
     path_ = os.path.split(input_prefix)
     r = re.compile(path_[1] + stem)
-    return _read(path_[0], r)
+    return _read(path_[0], r, check=check)
 
 def run(args):
     logging.info("Loading model summaries")
     extra = _read_2(args.input_prefix, "_summary.txt.gz")
     extra = extra[extra["n.snps.in.model"] > 0]
-    if "rho_avg" in extra:
-        extra = extra[(extra["pred.perf.pval"] < 0.05) & (extra.rho_avg >0.1)]
-    else:
-        extra = extra[(extra["pred.perf.pval"] < 0.05)]
-        extra = extra.assign(rho_avg = None)
-    if not "pred.perf.qval" in extra:
-        extra["pred.perf.qval"] = None
+    if not args.skip_check:
+        if "rho_avg" in extra:
+            extra = extra[(extra["pred.perf.pval"] < 0.05) & (extra.rho_avg >0.1)]
+        else:
+            extra = extra[(extra["pred.perf.pval"] < 0.05)]
+            extra = extra.assign(rho_avg = None)
+        if not "pred.perf.qval" in extra:
+            extra["pred.perf.qval"] = None
 
-    if "nested_cv_converged" in extra:
-        extra.nested_cv_converged = extra.nested_cv_converged.astype(numpy.int32)
+        if "nested_cv_converged" in extra:
+            extra.nested_cv_converged = extra.nested_cv_converged.astype(numpy.int32)
 
     logging.info("Loading weights")
     weights = _read_2(args.input_prefix, "_weights.txt.gz")
     weights = weights[weights.gene.isin(extra.gene)]
+    if args.coalesce_validation:
+        logging.info("Loading validation scores")
+        validation = _read_2(args.input_prefix, "_validation.txt.gz", check=False)
+        logging.log(9, "Validation results for {} genes".format(validation.shape[0]))
+        validation = validation[validation.gene.isin(extra.gene)]
+        logging.log(5, "Validation results for {} genes".format(validation.shape[0]))
+        Utilities.save_dataframe(validation,
+                                 args.output_prefix + "_validation.txt")
 
     if args.output_prefix:
         logging.info("Saving dbs and covariance")
@@ -83,7 +95,9 @@ if __name__ == "__main__":
     parser.add_argument("-input_prefix")
     parser.add_argument("-output_prefix")
     parser.add_argument("-output_prefix_text")
+    parser.add_argument("-coalesce_validation", default=False, action='store_true')
     parser.add_argument("-parsimony", type=int, default=logging.INFO)
+    parser.add_argument("--skip_check", default=False, action='store_true')
 
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony)

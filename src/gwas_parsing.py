@@ -258,7 +258,7 @@ def canonical_variant_id(d):
         if i not in d:
             raise ValueError("To create variant ID need column: {}".format(i))
 
-    d['variant_id'] = (d['chromosome'].astype(str) + '_'
+    d['variant_id'] = ('chr' + d['chromosome'].astype(str) + '_'
                        + d['position'].astype(str) + "_"
                        + d['non_effect_allele'] + "_" + d['effect_allele'])
     return d
