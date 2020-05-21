@@ -26,11 +26,12 @@ def _deplete_genotype_variants_to_record_batch(genotype, individual_ids):
 
 #The conversion to record batch is because of a bug in pyarrow for flavor="spark"
 def _to_record_batch(df):
-    data =[]
-    names = list(df.columns.values)
-    for c in names:
-        data.append(pa.array(df[c]))
-    return  pa.RecordBatch.from_arrays(data, names)
+    return pa.RecordBatch.from_pandas(df)
+    # data =[]
+    # names = list(df.columns.values)
+    # for c in names:
+    #     data.append(pa.array(df[c]))
+    # return  pa.RecordBatch.from_arrays(data, names)
 
 def save_variants(path, genotype, individual_ids):
     """Will consume the data in the study"""

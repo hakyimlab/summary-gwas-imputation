@@ -41,7 +41,7 @@ def generate_single_backend(args, variant_key):
     path_variant = args.output_prefix + ".variants.parquet"
     Parquet.save_variants(path_variant, genotype, individual_ids)
 
-    logging.info("Saving Genotype")
+    logging.info("Saving Genotype Metadata")
     path_metadata_variant = args.output_prefix + ".variants_metadata.parquet"
     Parquet.save_metadata(path_metadata_variant, genotype)
 
