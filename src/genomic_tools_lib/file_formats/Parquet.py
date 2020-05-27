@@ -40,12 +40,13 @@ def save_variants(path, genotype, individual_ids):
     pq.write_table(table, path, flavor="spark")
 
 def _save_metadata(path, metadata):
-    table = _to_record_batch(metadata.iloc[0:2, ])
-    with ParquetDataFrameSink(path, table.schema) as sink:
-        for c_ in range(1, 23):
-            logging.log(8, "Saving metadata for chromosome %d", c_)
-            p_ = metadata.loc[metadata.chromosome == c_]
-            sink.sink(p_)
+    metadata.to_parquet(path)
+    # table = _to_record_batch(metadata.iloc[0:2, ])
+    # with ParquetDataFrameSink(path, table.schema) as sink:
+    #     for c_ in range(1, 23):
+    #         logging.log(8, "Saving metadata for chromosome %d", c_)
+    #         p_ = metadata.loc[metadata.chromosome == c_]
+    #         sink.sink(p_)
 
 def save_metadata(path, genotype):
     _save_metadata(path, genotype.metadata)
