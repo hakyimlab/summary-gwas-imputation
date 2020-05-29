@@ -64,11 +64,10 @@ class RContext:
 
 class PythonContext:
     def __init__(self, pheno_fp, annotation_fp, geno_fp, chr,
-                 region_fp=None, sample_size = '908', max_r = None,
+                 region_fp=None, sample_size = None, max_r = None,
                  n_batches=None, batch=None):
         # args.pheno, args.annotation, args.chr, args.geno,
         #                               args.region
-        self.SAMPLE_SIZE = sample_size
         self.GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome',
                           'position', 'effect_allele', 'non_effect_allele',
                           'current_build', 'frequency', 'sample_size', 'zscore',
@@ -78,6 +77,7 @@ class PythonContext:
         self._pheno = pq.ParquetFile(pheno_fp)
         self.geno = pq.ParquetFile(geno_fp)
         self.individuals = self._find_individuals_intersection()
+        self.SAMPLE_SIZE = str(len(self.individuals))
         self.pheno = self._load_phenos(self.individuals, n_batches, batch)
         self.regions = self._load_regions(region_fp, self.chr)
         self.region_index = 0
