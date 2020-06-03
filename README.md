@@ -29,7 +29,7 @@ The basic requirements for running GWAS summary-imputation are python>=3.5 with 
 - pyliftover=0.4
 - pyarrow=0.11.1
 
-A quick-and-dirty solution to install these requirements is using [conda](https://anaconda.org/) and the file `src/conda_env.yaml`
+A quick-and-dirty solution to install these requirements is using [Miniconda](https://www.anaconda.com/open-source) and the file `src/conda_env.yaml`
 in this repository to create a working environment.
 
 ```bash
