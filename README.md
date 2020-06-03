@@ -33,7 +33,7 @@ A quick-and-dirty solution to install these requirements is using [Miniconda](ht
 in this repository to create a working environment.
 
 ```bash
-conda env create -f /path/to/this/repo/src/conda_env.yml
+conda env create -f /path/to/this/repo/src/conda_env.yaml
 conda activate imlab
 ```
 
