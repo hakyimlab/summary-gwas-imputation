@@ -6,16 +6,24 @@ import pandas
 import numpy
 import re
 import sys
-import rpy2.robjects as robjects
-from rpy2.robjects import pandas2ri
 import subprocess
 from genomic_tools_lib import Logging
 from genomic_tools_lib.file_formats import Parquet
-
+from genomic_tools_lib.external_tools.fastenloc import FEUtilities, RunFE
 
 def run(args):
-    pass
+    start = timer()
+    context = FEUtilities.context_from_args(args)
+    available_genes = context.get_available_genes()
 
+    for i, gene in enumerate(available_genes):
+        if args.MAX_M and i == args.MAX_M:
+            break
+        _start = timer()
+        logging.log(8, "Processing %i/%i:%s", i+1, len(available_genes), gene)
+        RunFE.run_fastenloc(context, gene)
+        _end = timer()
+        logging.log(7, "Elapsed: %s", str(_end - _start))
 
 
 if __name__ == '__main__':

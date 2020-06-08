@@ -255,7 +255,6 @@ def run(args):
         ss_df = ss_df.append(summ_stats)
     logging.info("Finished with calculating summary statistics. Beginning file writing")
     gwas_results = p_context.to_gwas(ss_df)
-    print(gwas_results.head())
     f_handler.writer(gwas_results, args.chr)
     end_time = timer() - start_time
     logging.log(9, "Finished in {:.2f} seconds".format(end_time))
