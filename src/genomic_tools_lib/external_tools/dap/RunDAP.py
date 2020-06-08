@@ -15,6 +15,27 @@ from ...individual_data import Utilities as StudyUtilities
 from ...Exceptions import ReportableException
 from ... import Utilities
 
+COMMAND_WITH_PRIORS = """#!/usr/bin/env bash
+
+[ -d {OUTPUT_DIR} ] || mkdir -p {OUTPUT_DIR}
+[ -d {INTERMEDIATE_DIR} ] || mkdir -p {INTERMEDIATE_DIR}
+
+{dap} \\
+-d {data} \\
+-prior {prior} \\
+{extra} \\
+-t 1 > {output}
+"""
+COMMAND_NO_PRIORS = """#!/usr/bin/env bash
+
+[ -d {OUTPUT_DIR} ] || mkdir -p {OUTPUT_DIR}
+[ -d {INTERMEDIATE_DIR} ] || mkdir -p {INTERMEDIATE_DIR}
+
+{dap} \\
+-d {data} \\
+{extra} \\
+-t 1 > {output}
+"""
 Stats = namedtuple("Stats", ["gene", "status"])
 
 # TODO: abstract and refactor into utilities
@@ -27,35 +48,35 @@ class _Context(_StudyBasedContext):
     def get_output_folder(self): raise RuntimeError("Not implemented")
     def get_delete_intermediate(self): raise RuntimeError("Not implemented")
 
-def run_dap(context, gene):
-    stats = _stats(gene)
+def run_dap(context, gene_id, gene_name):
+    stats = _stats(gene_name)
     try:
-        _run_dap(context, gene)
+        _run_dap(context, gene_id, gene_name)
     except ReportableException as ex:
         status = Utilities.ERROR_REGEXP.sub('_', ex.msg)
-        stats = _stats(gene, status=status)
+        stats = _stats(gene_name, status=status)
         logging.info("Reportable exception running dap: %s", ex.msg)
     except Exception as ex:
         msg = '{0}'.format(type(ex))  # .replace('"', "'")
         status = '"{0}"'.format(msg)
-        stats = _stats(gene,  status=status)
+        stats = _stats(gene_name,  status=status)
         logging.info("Exception running dap:\n%s", traceback.format_exc())
     finally:
         if context.get_delete_intermediate():
-            folder = _intermediate_folder(context, gene)
+            folder = _intermediate_folder(context, gene_name)
             if os.path.exists(folder):
                 shutil.rmtree(folder)
 
     return stats
 
-def _run_dap(context, gene):
-    intermediate = _intermediate_folder(context, gene)
+def _run_dap(context, gene_id, gene_name):
+    intermediate = _intermediate_folder(context, gene_name)
     os.makedirs(intermediate)
-    study = StudyUtilities._get_study_for_gene(context, gene, rename_pheno=None)
+    study = StudyUtilities._get_study_for_gene(context, gene_id, gene_name, rename_pheno=None)
 
     SBAM.save_study(study, intermediate)
 
-    run_dap_command(context, gene)
+    run_dap_command(context, gene_name)
 
 r_ = re.compile(r"\\\n[\s]+\\\n")
 def _render(s):
@@ -75,33 +96,27 @@ def dap_command(context, gene):
     options = context.get_options()
     if len(options):
         args["extra"] = " ".join(["{} {}".format(k, str(v)) for k,v in options.items()])
+    else:
+        args['extra'] = ""
 
-    command = \
-"""#!/usr/bin/env bash
-
-[ -d {OUTPUT_DIR} ] || mkdir -p {OUTPUT_DIR}
-[ -d {INTERMEDIATE_DIR} ] || mkdir -p {INTERMEDIATE_DIR}
-
-{dap} \\
--d {data} \\
--prior {prior} \\
-{extra} \\
--t 1 > {output}
-""".format(**args)
+    if args['prior'] is not None:
+        command = COMMAND_WITH_PRIORS.format(**args)
+    else:
+        command = COMMAND_NO_PRIORS.format(**args)
 #The following is not currently supported in dao-g. Sup.
 #-t 1 \\
 #-it 0.05 > {output}
     command = _render(command)
     return command
 
-def run_dap_command(context, gene):
-    command = dap_command(context, gene)
-    script_path = _script_path(context, gene)
+def run_dap_command(context, gene_name):
+    command = dap_command(context, gene_name)
+    script_path = _script_path(context, gene_name)
     with open(script_path, "w") as script:
         script.write(command)
 
-    _o = os.path.join(_intermediate_folder(context, gene), "dap.o")
-    _e = os.path.join(_intermediate_folder(context, gene), "dap.e")
+    _o = os.path.join(_intermediate_folder(context, gene_name), "dap.o")
+    _e = os.path.join(_intermediate_folder(context, gene_name), "dap.e")
     with open(_o, "w") as o:
         with open(_e, "w") as e:
             call(["bash", script_path], stderr=e, stdout=o)

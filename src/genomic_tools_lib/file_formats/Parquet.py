@@ -228,8 +228,12 @@ def study_from_parquet(variants, variants_metadata, pheno=None, covariates=None,
             _r = range(0, _r)
 
         for i in _r:
-            logging.log(9,"Loading row group %d", i)
-            vmi_ = f.read_row_group(i).to_pandas()
+            try:
+                logging.log(9, "Loading row group %d", i)
+                vmi_ = f.read_row_group(i).to_pandas()
+            except pa.lib.ArrowIOError:
+                logging.warning("Reading metadata by row group didn't work. Loading entire file")
+                vmi_ = f.read().to_pandas()
 
             if post_process_variants_metadata:
                 vmi_ = post_process_variants_metadata(vmi_)

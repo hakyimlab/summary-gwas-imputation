@@ -3,6 +3,7 @@ __author__ = "alvaro barbeira"
 
 import os
 import logging
+import sys
 
 from timeit import default_timer as timer
 
@@ -14,24 +15,22 @@ def run(args):
     start = timer()
 
     if os.path.exists(args.output_folder):
-        logging.info("Output folder exists. Nope.")
-        return
+        logging.warning("Output folder exists.")
 
     if os.path.exists(args.intermediate_folder):
-        logging.info("Intermediate folder exists. Nope.")
-        return
+        logging.warning("Intermediate folder exists.")
 
     stats = []
 
     context = DAPUtilities.context_from_args(args)
     available_genes = context.get_available_genes()
 
-    for i,gene in enumerate(available_genes):
+    for i,(gene_name, gene_id) in enumerate(available_genes.items()):
         if args.MAX_M and i==args.MAX_M:
             break
         _start = timer()
-        logging.log(8, "Processing %i/%i:%s", i+1, len(available_genes), gene)
-        _stats = RunDAP.run_dap(context, gene)
+        logging.log(8, "Processing %i/%i:%s", i+1, len(available_genes), gene_name)
+        _stats = RunDAP.run_dap(context, gene_id, gene_name)
         _end = timer()
         logging.log(7, "Elapsed: %s", str(_end - _start))
         stats.append(_stats)
@@ -44,6 +43,7 @@ def run(args):
     stats_path = os.path.join(args.output_folder, stats_)
     stats = RunDAP.data_frame_from_stats(stats).fillna("NA")
     Utilities.save_dataframe(stats, stats_path)
+    logging.info("Finished")
 
 if __name__ == "__main__":
     import argparse
@@ -68,10 +68,13 @@ if __name__ == "__main__":
     parser.add_argument("--keep_intermediate_folder", help="don't delete the intermediate stuff", action='store_true')
     parser.add_argument("--MAX_M", help="Run for up o this many genes", type=int, default=None)
     parser.add_argument("--stats_name", help="name for run stats")
+    parser.add_argument("--regions", help="Optional LD-independent region file; useful for when gene annotation is not "
+                                          "specified.")
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
 
     args = parser.parse_args()
 
-    Logging.configure_logging(int(args.parsimony))
+    Logging.configure_logging(int(args.parsimony), target=sys.stdout,
+                              with_date=True)
 
     run(args)

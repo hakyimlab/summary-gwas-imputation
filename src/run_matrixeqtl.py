@@ -68,7 +68,6 @@ class PythonContext:
                  n_batches=None, batch=None):
         # args.pheno, args.annotation, args.chr, args.geno,
         #                               args.region
-        self.SAMPLE_SIZE = sample_size
         self.GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome',
                           'position', 'effect_allele', 'non_effect_allele',
                           'current_build', 'frequency', 'sample_size', 'zscore',
@@ -78,6 +77,7 @@ class PythonContext:
         self._pheno = pq.ParquetFile(pheno_fp)
         self.geno = pq.ParquetFile(geno_fp)
         self.individuals = self._find_individuals_intersection()
+        self.SAMPLE_SIZE = str(len(self.individuals))
         self.pheno = self._load_phenos(self.individuals, n_batches, batch)
         self.regions = self._load_regions(region_fp, self.chr)
         self.region_index = 0
@@ -255,7 +255,6 @@ def run(args):
         ss_df = ss_df.append(summ_stats)
     logging.info("Finished with calculating summary statistics. Beginning file writing")
     gwas_results = p_context.to_gwas(ss_df)
-    print(gwas_results.head())
     f_handler.writer(gwas_results, args.chr)
     end_time = timer() - start_time
     logging.log(9, "Finished in {:.2f} seconds".format(end_time))

@@ -33,9 +33,9 @@ def run(args):
     in_extension = args.input.split(".")[-1]
     if in_extension == "parquet":
         df = load_parquet(args.input)
-    elif in_extension == ".csv":
+    elif in_extension == "csv":
         df = load_text(args.input, ",")
-    elif in_extension == ".txt":
+    elif in_extension == "txt":
         df = load_text(args.input, "\t")
     else:
         raise ValueError("Input file extension not supported")
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     parser.add_argument("-output", help="Output filepath")
 
     args = parser.parse_args()
-    Logging.configure_logging(10)
+    Logging.configure_logging(10, with_date=True, target=sys.stdout)
 
     run(args)
 
