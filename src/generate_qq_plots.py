@@ -43,12 +43,13 @@ class RContext:
         logging.log(5, "Plotted {}".format(pheno_tag))
 
 class FileIO:
-    def __init__(self, out_dir, in_dir, pheno_name_map):
+    def __init__(self, out_dir, in_dir, pheno_name_map_fp, n_batches, batch):
         """
 
         :param out_dir: string. Output directory.
         :param in_dir: string. Input directory
-        :param pheno_name_map: pandas DataFrame. Columns "pheno_name" and
+        :param pheno_name_map_fp: path to tsv. Should be loaded as a
+                                pandas DataFrame. Columns "pheno_name" and
                                 "pheno_num"
         :param load_pheno_f: function. input: pheno_name, pheno_num.
                                 function returns a list of p-values for the
@@ -56,23 +57,31 @@ class FileIO:
         """
         self.out_dir = out_dir
         self.in_dir = in_dir
-        self.pheno_name_map = pheno_name_map
+        self.K_FP = "chr-{chr}/MatrixEQTL_{pheno}_chr{chr}.txt"
+        self.RE_FNAME = re.compile("MatrixEQTL_(.*)_chr(.*).txt")
+        self.K_DIR = "chr-{chr}"
+        if pheno_name_map_fp is not None:
+            self.pheno_name_map = self._load_pheno_map(pheno_name_map_fp,
+                                                       n_batches,
+                                                       batch)
+        else:
+            self.pheno_name_map = self._discover_phenos(n_batches, batch)
+        logging.info("Working on {} phenos".format(self.pheno_name_map.shape[0]))
         self.out_name_pattern = os.path.join(self.out_dir,
-                                             "metabolite_{}_qq.png")
+                                             "ukb-image-gwas_{}_qq.png")
 
     def _load_single_pheno(self, pheno_num):
-        fp = "chr-{chr}/MatrixEQTL_{num}_chr{chr}.txt"
-        fp = os.path.join(self.in_dir, fp)
+        fp = os.path.join(self.in_dir, self.K_FP)
         all_pvalues = []
         for chr in range(1,23):
-            fname_chr = fp.format(num=pheno_num, chr=chr)
+            fname_chr = fp.format(pheno=pheno_num, chr=chr)
             try:
                 df = pandas.read_csv(fname_chr, sep = "\t",
                                       usecols=['pvalue'])
                 pvalues = list(df['pvalue'])
                 all_pvalues.extend(pvalues)
             except FileNotFoundError:
-                logging.warning("SS for pheno num {} and chr {} out of place.".format(pheno_num, chr))
+                logging.warning("SS for pheno {} and chr {} out of place.".format(pheno_num, chr))
             except ValueError:
                 dd = pandas.read_csv(fname_chr)
                 logging.warning("Bad col names: " + fname_chr)
@@ -87,25 +96,46 @@ class FileIO:
             out_fp = self.out_name_pattern.format(f.pheno_num)
             yield (pvals, out_fp, f.pheno_name, f.pheno_num)
 
+    @staticmethod
+    def _load_pheno_map(fp, n_batches=None, batch=None):
+        df = pandas.read_csv(fp, sep="\t")
+        ll = list(df.index)
+        if (n_batches is not None) and (batch is not None):
+            ll = numpy.array_split(ll, n_batches)[batch]
+
+        df = df.loc[ll]
+        return df
+
+    def _discover_phenos(self, n_batches=None, batch=None):
+        phenos = set()
+        for chr in range(1,23):
+            try:
+                search_dir = os.path.join(self.in_dir, self.K_DIR.format(chr=chr))
+                input_files = os.listdir(search_dir)
+                for file in input_files:
+                    search_obj = self.RE_FNAME.search(file)
+                    if search_obj:
+                        phenos.add(search_obj.group(1))
+            except FileNotFoundError:
+                logging.warning("Results for chromosome {} not found".format(chr))
+        df = pandas.DataFrame(data=list(phenos), columns=['pheno_name'])
+        df['pheno_num'] = df['pheno_name']
+        logging.info("Discovered {} phenotypes".format(df.shape[0]))
+
+        if (n_batches is not None) and (batch is not None):
+            ll = list(df.index)
+            ll = numpy.array_split(ll, n_batches)[batch]
+            df = df.loc[ll]
+        return df
 
 
 
-def load_pheno_map(fp, n_batches=None, batch=None):
-
-    df = pandas.read_csv(fp, sep = "\t")
-    ll = list(df.index)
-    if (n_batches is not None) and (batch is not None):
-        ll = numpy.array_split(ll, n_batches)[batch]
-
-    df = df.loc[ll]
-    return df
 
 def run(args):
     Utilities.maybe_create_folder(args.out_dir)
     r_context = RContext()
-    name_map = load_pheno_map(args.pheno_map, args.n_batches, args.batch)
-    logging.log(9, "Loaded {} phenos".format(len(name_map)))
-    file_handler = FileIO(args.out_dir, args.in_dir, name_map)
+    file_handler = FileIO(args.out_dir, args.in_dir, args.pheno_map,
+                          args.n_batches, args.batch)
     for pvals, fp, pheno_name, pheno_num in file_handler.load_all():
         r_context.make_plot(pvals, fp, pheno_name, pheno_num)
     logging.info("Finish Key")
@@ -115,7 +145,8 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('-pheno_map', help="tsv with columns pheno_name, pheno_num")
+    parser.add_argument('--pheno_map', help="tsv with columns pheno_name, "
+                                            "pheno_num")
     parser.add_argument('-out_dir')
     parser.add_argument('-in_dir')
     parser.add_argument('--n_batches', type=int,

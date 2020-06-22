@@ -58,23 +58,23 @@ load_regions <- function(fp, chr_){
 # GENOTYPE LOADING FUNCTION
 
 
-# get_genotype <- function(fp, eids, cols=NULL){
-#     if (is.null(cols)){
-#       geno_df <- data.frame(read_parquet(fp))
-#     }
-#     else{
-#       geno_df <- data.frame(read_parquet(fp, col_select=cols))
-#     }
-#     geno_df <- geno_df %>% filter(individual %in% eids)
-#     rownames(geno_df) <- geno_df$individual
-#     geno_df <- (geno_df %>%
-#         select(-c(individual)) %>%
-#         data.matrix %>%
-#         t)
-#     genos <- SlicedData$new()
-#     genos$CreateFromMatrix(geno_df)
-#     return(genos)
-# }
+get_genotype <- function(fp, eids, cols=NULL){
+    if (is.null(cols)){
+      geno_df <- data.frame(read_parquet(fp))
+    }
+    else{
+      geno_df <- data.frame(read_parquet(fp, col_select=cols))
+    }
+    geno_df <- geno_df %>% filter(individual %in% eids)
+    rownames(geno_df) <- geno_df$individual
+    geno_df <- (geno_df %>%
+        select(-c(individual)) %>%
+        data.matrix %>%
+        t)
+    genos <- SlicedData$new()
+    genos$CreateFromMatrix(geno_df)
+    return(genos)
+}
 
 matrix_to_sliceddata <- function(m, transpose=FALSE){
   if (transpose) {
@@ -159,6 +159,24 @@ matrix_to_sliceddata <- function(m, transpose=FALSE){
 # }
 
 run_summ_stats <- function(geno_matrix, pheno_matrix){
+  # geno_matrix: matrix. Individuals in rows
+  # pheno_matrix: matrix. Individuals in rows
+
+  #print(paste("Rows: ", nrow(geno_matrix), nrow(pheno_matrix), sep = " "))
+  #print(paste("Cols: ", ncol(geno_matrix), ncol(geno_matrix), sep = " "))
+  genos <- matrix_to_sliceddata(geno_matrix, transpose=TRUE)
+  phenos <- matrix_to_sliceddata(pheno_matrix, transpose=TRUE)
+  me_new <- Matrix_eQTL_main(genos,
+                               phenos,
+                               output_file_name=NULL,
+                               pvOutputThreshold=1.0,
+                               useModel=modelLINEAR,
+                               verbose=FALSE)
+  return(me_new$all$eqtls)
+}
+
+
+run_summ_stats_2 <- function(geno_fp, geno_cols, eids, pheno_matrix){
   # geno_matrix: matrix. Individuals in rows
   # pheno_matrix: matrix. Individuals in rows
 

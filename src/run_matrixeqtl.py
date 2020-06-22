@@ -93,7 +93,7 @@ class PythonContext:
         pheno_ind_set = self._pheno.read(columns = ['individual'])[0].to_pylist()
         geno_ind_set = self.geno.read(columns = ['individual'])[0].to_pylist()
 
-        pheno_ind_set = { str(i) for i in pheno_ind_set }
+        pheno_ind_set = {str(i) for i in pheno_ind_set}
         geno_ind_set = { str(i) for i in geno_ind_set }
 
         out_set = pheno_ind_set.intersection(geno_ind_set)
