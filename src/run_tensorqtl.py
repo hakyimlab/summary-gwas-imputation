@@ -91,11 +91,16 @@ class FileIn:
 
     def get_geno(self):
         logging.info("Loading genotype")
-        pr = tensorqtl.genotypeio.PlinkReader(plink_prefix_path, verbose=False)
+        pr = tensorqtl.genotypeio.PlinkReader(self.geno_pre, verbose=False)
         genotype_df = pr.load_genotypes()
+        genotype_df.columns = [str(i) for i in genotype_df.columns]
+        logging.info("Finished loading genotype")
+        print(genotype_df.head())
+        print(genotype_df.shape)
+        return genotype_df
 
     def _find_intersection(self):
-        fam_df = pd.read_csv(self.geno_pre + self.FAM,
+        fam_df = pandas.read_csv(self.geno_pre + self.FAM,
                              sep='\s',
                              header=None,
                              names=['FID', 'IID', 'PID', 'MID', 'SEX', 'PHENO'],
@@ -109,7 +114,7 @@ class FileIn:
 
         # I have so much trouble remembering python set methods.
         # This is intersection.
-        all_ids = geno_ids & pheno_ids
+        all_ids = geno_ids.intersection(pheno_ids)
         logging.info("Working with {} individuals".format(len(all_ids)))
         return all_ids
 
@@ -123,6 +128,7 @@ class FileIn:
         logging.info("Loaded {} phenotypes".format(df.shape[1]))
         df = df.set_index('individual')
         self.covar_df = pandas.DataFrame(index=df.index)
+        print(df.shape)
         # ind_index = pd.Index(individuals)
         # df = df.reindex(ind_index)
         # df_ind = df['individual']
