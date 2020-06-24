@@ -13,7 +13,7 @@ import pandas
 import numpy
 
 class FileOut:
-    def __init__(self, out_dir, chromosome):
+    def __init__(self, out_dir, chromosome, parquet_geno_metadata=None):
         self.out_dir = out_dir
         self.chromosome = chromosome
         self.dir_pattern = "chr-{chr}".format(chr=chromosome)
@@ -24,6 +24,11 @@ class FileOut:
                       'current_build', 'frequency', 'sample_size', 'zscore',
                       'pvalue', 'effect_size', 'standard_error',
                       'imputation_status', 'n_cases', 'gene', 'region_id']
+        if parquet_geno_metadata is not None:
+            self.metadata = pq.read_table(parquet_geno_metadata)
+            self.metadata.set_index('variant_id')
+        else:
+            self.metadata = None
     def write_text(self, df, pheno):
         fp = os.path.join(self.out_dir,
                           self.dir_pattern,
@@ -46,7 +51,8 @@ class FileOut:
                   'maf': 'frequency'}
         df = df.rename(mapper=map_dd, axis=1)
         df['sample_size'] = [n_samples] * ll
-        df['chromosome'] = [self.chromosome] * ll
+        if self.metadata is not None:
+            df = df.merge(self.metadata, how='left')
         return self._fill_empty_gwas_cols(df)
 
     def _fill_empty_gwas_cols(self, df, fill='NA'):
@@ -58,16 +64,21 @@ class FileOut:
 
 
 class FileIn:
-    def __init__(self, plink_geno, parquet_pheno):
+    def __init__(self, plink_geno, parquet_pheno, rewrite_bim=False):
         self.BIM = ".bim"
         self.BED = ".bed"
         self.FAM = ".fam"
         self.geno_pre = plink_geno
+        if rewrite_bim:
+            self._rewrite_bim()
         self.pheno_fp = parquet_pheno
         self.pheno = pq.ParquetFile(parquet_pheno)
+
         self.covar_df = None
 
         self.individuals = self._find_intersection()
+
+
 
     def get_pheno(self): return self._load_pheno(self.individuals)
     def get_covar(self): return self.covar_df
@@ -81,13 +92,32 @@ class FileIn:
 
         return genotype_df
 
-    def _find_intersection(self):
-        fam_df = pandas.read_csv(self.geno_pre + self.FAM,
-                             sep='\s',
+    @staticmethod
+    def _load_fam(fp):
+        df = pandas.read_csv(fp,
+                        sep='\s',
+                        header=None,
+                        names=['FID', 'IID', 'PID', 'MID', 'SEX', 'PHENO'],
+                        engine='python')
+        return df
+
+    def _rewrite_bim(self):
+        logging.info("Rewriting BIM to have standard variant IDs")
+        fp = self.geno_pre + self.BIM
+        df = pandas.read_csv(fp,
+                             sep="\s",
                              header=None,
-                             names=['FID', 'IID', 'PID', 'MID', 'SEX', 'PHENO'],
-                             usecols=['IID'],
-                             engine='python')
+                             names=['CHR', 'SNP', 'XXX', 'BP', 'REF', 'ALT'])
+        df['SNP'] = ("chr" + df.CHR.astype('str')
+                     + "_" + df.BP.astype('str')
+                     + "_" + df.REF
+                     + "_" + df.ALT)
+
+        df.to_csv(fp, sep="\t")
+
+    def _find_intersection(self):
+        fam_df = self._load_fam(self.geno_pre + self.FAM)
+
         geno_ids = set(fam_df.IID.astype(str).values)
         logging.log(9, "Individuals from genotype: {}".format(len(geno_ids)))
 
@@ -126,9 +156,12 @@ def run(args):
     :return:
     """
     start = timer()
-    file_out = FileOut(args.output_dir, args.chromosome)
+    file_out = FileOut(args.output_dir,
+                       args.chromosome,
+                       args.parquet_genotype_metadata)
     file_in = FileIn(args.plink_genotype,
-                     args.parquet_phenotype)
+                     args.parquet_phenotype,
+                     args.rewrite_bim)
     pheno_df = file_in.get_pheno()
     covar_df = file_in.get_covar()
     geno_df = file_in.get_geno()
@@ -160,7 +193,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser("Fast GWAS summary statistics from tensorQTL")
 
     parser.add_argument("-plink_genotype")
-    # parser.add_argument("-plink_genotype_pattern")
+    parser.add_argument("--parquet_genotype_metadata")
+    parser.add_argument("--rewrite_bim", default=False, action='store_true')
     parser.add_argument("-parquet_phenotype")
     parser.add_argument("-output_dir")
     parser.add_argument("-chromosome")
