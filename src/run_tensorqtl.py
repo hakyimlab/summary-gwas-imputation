@@ -18,15 +18,15 @@ class FileOut:
         self.chromosome = chromosome
         self.dir_pattern = "chr-{chr}".format(chr=chromosome)
         Utilities.maybe_create_folder(os.path.join(out_dir, self.dir_pattern))
-        self.file_pattern = "tensorqtl-summ-stats_{pheno}_chr{chr}.txt.gz"
+        self.file_pattern = "tensorqtl-summ-stats_{pheno}_chr{chr}.txt"
         self.GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome',
                       'position', 'effect_allele', 'non_effect_allele',
                       'current_build', 'frequency', 'sample_size', 'zscore',
                       'pvalue', 'effect_size', 'standard_error',
                       'imputation_status', 'n_cases', 'gene', 'region_id']
         if parquet_geno_metadata is not None:
-            self.metadata = pq.read_table(parquet_geno_metadata)
-            self.metadata.set_index('variant_id')
+            self.metadata = pq.read_table(parquet_geno_metadata).to_pandas()
+            self.metadata.set_index('id')
         else:
             self.metadata = None
     def write_text(self, df, pheno):
@@ -42,6 +42,7 @@ class FileOut:
         ['variant_id', 'phenotype_id', 'pval', 'b', 'b_se', 'maf']
         and create a GWAS file.
         """
+        logging.info("Formatting GWAS output")
         ll = df.shape[0]
         df.index = df['variant_id']
         map_dd = {'phenotype_id': 'gene',
@@ -52,7 +53,11 @@ class FileOut:
         df = df.rename(mapper=map_dd, axis=1)
         df['sample_size'] = [n_samples] * ll
         if self.metadata is not None:
-            df = df.merge(self.metadata, how='left')
+            df = df.join(self.metadata, how='left', sort=False)
+            map_dd = {'allele_0': 'non_effect_allele',
+                      'allele_1': 'effect_allele'}
+            df = df.rename(mapper=map_dd, axis=1)
+            df = df.fillna('NA')
         return self._fill_empty_gwas_cols(df)
 
     def _fill_empty_gwas_cols(self, df, fill='NA'):
@@ -88,7 +93,6 @@ class FileIn:
         pr = genotypeio.PlinkReader(self.geno_pre, verbose=False)
         genotype_df = pr.load_genotypes()
         genotype_df.columns = [str(i) for i in genotype_df.columns]
-        logging.info("Finished loading genotype")
 
         return genotype_df
 
@@ -106,6 +110,7 @@ class FileIn:
         fp = self.geno_pre + self.BIM
         df = pandas.read_csv(fp,
                              sep="\s",
+                             engine='python',
                              header=None,
                              names=['CHR', 'SNP', 'XXX', 'BP', 'REF', 'ALT'])
         df['SNP'] = ("chr" + df.CHR.astype('str')
@@ -113,7 +118,7 @@ class FileIn:
                      + "_" + df.REF
                      + "_" + df.ALT)
 
-        df.to_csv(fp, sep="\t")
+        df.to_csv(fp, sep="\t", index=False, header=False)
 
     def _find_intersection(self):
         fam_df = self._load_fam(self.geno_pre + self.FAM)
@@ -175,6 +180,7 @@ def run(args):
                                maf_threshold=args.maf_filter,
                                verbose=False)
     gwas_df = file_out.make_gwas(ss_df, len(file_in.individuals))
+    logging.info("Writing results")
     n_genes = len(gwas_df['gene'].drop_duplicates())
     for i, (pheno, df_i) in enumerate(gwas_df.groupby('gene')):
         logging.log(7, "Writing pheno {}/{}".format(i, n_genes))
