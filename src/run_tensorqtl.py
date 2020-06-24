@@ -14,10 +14,10 @@ import numpy
 
 class FileOut:
     def __init__(self, out_dir, chromosome):
-        Utilities.maybe_create_folder(out_dir)
         self.out_dir = out_dir
         self.chromosome = chromosome
         self.dir_pattern = "chr-{chr}".format(chr=chromosome)
+        Utilities.maybe_create_folder(os.path.join(out_dir, self.dir_pattern))
         self.file_pattern = "tensorqtl-summ-stats_{pheno}_chr{chr}.txt"
         self.GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome',
                       'position', 'effect_allele', 'non_effect_allele',
@@ -26,6 +26,7 @@ class FileOut:
                       'imputation_status', 'n_cases', 'gene', 'region_id']
     def write_text(self, df, pheno):
         fp = os.path.join(self.out_dir,
+                          self.dir_pattern,
                           self.file_pattern.format(pheno=pheno,
                                                    chr=self.chromosome))
         df.to_csv(fp, sep = "\t", index=False)
@@ -125,7 +126,7 @@ def run(args):
     :return:
     """
     start = timer()
-    file_out = FileOut(args.output_dir, args.chromosmoe)
+    file_out = FileOut(args.output_dir, args.chromosome)
     file_in = FileIn(args.plink_genotype,
                      args.parquet_phenotype)
     pheno_df = file_in.get_pheno()
@@ -137,8 +138,8 @@ def run(args):
                                pheno_df,
                                covar_df,
                                batch_size=2000,
-                               pval_threshold=1e-5,
-                               maf_threshold=0.05,
+                               pval_threshold=args.pval_filter,
+                               maf_threshold=args.maf_filter,
                                verbose=False)
     gwas_df = file_out.make_gwas(ss_df, len(file_in.individuals))
     n_genes = len(gwas_df['gene'].drop_duplicates())
