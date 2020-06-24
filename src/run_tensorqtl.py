@@ -8,7 +8,7 @@ import subprocess
 from genomic_tools_lib import Logging
 from genomic_tools_lib.file_formats import Parquet
 
-import tensorqtl
+from genomic_tools_lib.external_tools.tensorqtl import genotypeio, trans
 from pyarrow import parquet as pq
 import pandas
 import numpy
@@ -91,12 +91,12 @@ class FileIn:
 
     def get_geno(self):
         logging.info("Loading genotype")
-        pr = tensorqtl.genotypeio.PlinkReader(self.geno_pre, verbose=False)
+        pr = genotypeio.PlinkReader(self.geno_pre, verbose=False)
         genotype_df = pr.load_genotypes()
         genotype_df.columns = [str(i) for i in genotype_df.columns]
         logging.info("Finished loading genotype")
-        print(genotype_df.head())
-        print(genotype_df.shape)
+#        print(genotype_df.head())
+#        print(genotype_df.shape)
         return genotype_df
 
     def _find_intersection(self):
@@ -126,9 +126,10 @@ class FileIn:
         df = Parquet._read(self.pheno, to_pandas=True,
                            specific_individuals=individuals)
         logging.info("Loaded {} phenotypes".format(df.shape[1]))
+        df['individual'] = df['individual'].astype('str')
         df = df.set_index('individual')
         self.covar_df = pandas.DataFrame(index=df.index)
-        print(df.shape)
+#        print(df.shape)
         # ind_index = pd.Index(individuals)
         # df = df.reindex(ind_index)
         # df_ind = df['individual']
@@ -147,12 +148,13 @@ def run(args):
     :return:
     """
     start = timer()
+    #logging.info("Using tensorqtl version {}".format(tensorqtl.__version__))
     file_in = FileIn(args.plink_genotype,
                      args.parquet_phenotype)
     pheno_df = file_in.get_pheno()
     covar_df = file_in.get_covar()
     geno_df = file_in.get_geno()
-    ss_df = tensorqtl.trans.map_trans(geno_df,
+    ss_df = trans.map_trans(geno_df,
                                        pheno_df,
                                        covar_df,
                                        batch_size=2000,
