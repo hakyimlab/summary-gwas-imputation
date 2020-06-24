@@ -18,7 +18,7 @@ class FileOut:
         self.chromosome = chromosome
         self.dir_pattern = "chr-{chr}".format(chr=chromosome)
         Utilities.maybe_create_folder(os.path.join(out_dir, self.dir_pattern))
-        self.file_pattern = "tensorqtl-summ-stats_{pheno}_chr{chr}.txt"
+        self.file_pattern = "tensorqtl-summ-stats_{pheno}_chr{chr}.txt.gz"
         self.GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome',
                       'position', 'effect_allele', 'non_effect_allele',
                       'current_build', 'frequency', 'sample_size', 'zscore',
