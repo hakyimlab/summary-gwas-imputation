@@ -3,9 +3,8 @@ import logging
 from timeit import default_timer as timer
 import re
 import sys
-import subprocess
 
-from genomic_tools_lib import Logging
+from genomic_tools_lib import Logging, Utilities
 from genomic_tools_lib.file_formats import Parquet
 
 from genomic_tools_lib.external_tools.tensorqtl import genotypeio, trans
@@ -13,65 +12,48 @@ from pyarrow import parquet as pq
 import pandas
 import numpy
 
-
-# def main(args):
-#     """
-#     1. load phenotype and covariate data
-#     2. transform, write, and gzip BED file
-#     3. load BED and genotype
-#     :param args:
-#     :return:
-#     """
-#     # Ensure env is set up correctly:
-#     single_chrom_files = helpers.check_if_formattable(args.geno)
-#     if single_chrom_files:
-#         files = helpers.format_chrom_file_names(args.geno)
-#     else:
-#         files = [args.geno]
-#     for file in files:
-#         helpers.ensure_files_in_place(file)
-#     helpers.check_cuda()
-#     helpers.make_dir(args.out)
-#
-#     # covar_df = helpers.load_pheno_covar_df(args.covar)
-#     pheno_df = helpers.load_pheno_covar_df(args.pheno)
-#     pheno_df.index = pheno_df.index.astype('str')
-#     intersection_index, covar_df = merge_data_sources(pheno_df.index, args.covar, files[0])
-#     pheno_df = pheno_df.reindex(intersection_index).T
-#     n_phenos = helpers.find_n_phenos(args.pheno)
-#
-#     trans_df = pd.DataFrame(columns = ['variant_id', 'phenotype_id', 'pval', 'maf'])
-#
-#     for file in files:
-#         plink_reader = tensorqtl.genotypeio.PlinkReader(file,
-#                                                         select_samples = [str(i) for i in intersection_index],
-#                                                         verbose = False)
-#         geno_df = plink_reader.load_genotypes()
-#         logging.info("Loaded genotype data from {}".format(file))
-#         trans_df_i = tensorqtl.trans.map_trans(geno_df,
-#                                                pheno_df,
-#                                                covar_df,
-#                                                batch_size = 2000,
-#                                                pval_threshold = args.pval_threshold,
-#                                                maf_threshold = args.maf_threshold,
-#                                                verbose = False)
-#         trans_df = trans_df.append(trans_df_i)
-#         logging.info("Finished analysis for genotype file {}".format(file))
-#
-#     # Write logs and write output
-#     logging.info('Finished with QTL analysis')
-#     n_matched_phenos = len(trans_df['phenotype_id'].unique())
-#     if n_matched_phenos < n_phenos:
-#         s = "Only {n_matched_phenos} out of {n_phenos} phenotypes showed significant associations." \
-#             " The p-value threshold may be too low".format(n_matched_phenos = n_matched_phenos,
-#                                                            n_phenos = n_phenos)
-#         logging.info(s)
-#     trans_results_fp = os.path.join(args.out, TODAY + '_trans-qtl-results.txt')
-#     trans_df.to_csv(trans_results_fp, sep = '\t', index = False)
-
 class FileOut:
-    def __init__(self, out_fp, gzip=False):
-        pass
+    def __init__(self, out_dir, chromosome):
+        Utilities.maybe_create_folder(out_dir)
+        self.out_dir = out_dir
+        self.chromosome = chromosome
+        self.dir_pattern = "chr-{chr}".format(chr=chromosome)
+        self.file_pattern = "tensorqtl-summ-stats_{pheno}_chr{chr}.txt"
+        self.GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome',
+                      'position', 'effect_allele', 'non_effect_allele',
+                      'current_build', 'frequency', 'sample_size', 'zscore',
+                      'pvalue', 'effect_size', 'standard_error',
+                      'imputation_status', 'n_cases', 'gene', 'region_id']
+    def write_text(self, df, pheno):
+        fp = os.path.join(self.out_dir,
+                          self.file_pattern.format(pheno=pheno,
+                                                   chr=self.chromosome))
+        df.to_csv(fp, sep = "\t", index=False)
+
+    def make_gwas(self, df, n_samples):
+        """
+        Take tensorqtl output, with cols
+        ['variant_id', 'phenotype_id', 'pval', 'b', 'b_se', 'maf']
+        and create a GWAS file.
+        """
+        ll = df.shape[0]
+        df.index = df['variant_id']
+        map_dd = {'phenotype_id': 'gene',
+                  'pval': 'pvalue',
+                  'b': 'effect_size',
+                  'b_se': 'standard_error',
+                  'maf': 'frequency'}
+        df = df.rename(mapper=map_dd, axis=1)
+        df['sample_size'] = [n_samples] * ll
+        df['chromosome'] = [self.chromosome] * ll
+        return self._fill_empty_gwas_cols(df)
+
+    def _fill_empty_gwas_cols(self, df, fill='NA'):
+        ll = df.shape[0]
+        for i in self.GWAS_COLS:
+            if i not in df:
+                df[i] = [fill] * ll
+        return df[self.GWAS_COLS]
 
 
 class FileIn:
@@ -95,8 +77,7 @@ class FileIn:
         genotype_df = pr.load_genotypes()
         genotype_df.columns = [str(i) for i in genotype_df.columns]
         logging.info("Finished loading genotype")
-#        print(genotype_df.head())
-#        print(genotype_df.shape)
+
         return genotype_df
 
     def _find_intersection(self):
@@ -129,11 +110,7 @@ class FileIn:
         df['individual'] = df['individual'].astype('str')
         df = df.set_index('individual')
         self.covar_df = pandas.DataFrame(index=df.index)
-#        print(df.shape)
-        # ind_index = pd.Index(individuals)
-        # df = df.reindex(ind_index)
-        # df_ind = df['individual']
-        # df = df.drop('individual', axis=1)
+
         return df.T
 
 def run(args):
@@ -148,22 +125,30 @@ def run(args):
     :return:
     """
     start = timer()
-    #logging.info("Using tensorqtl version {}".format(tensorqtl.__version__))
+    file_out = FileOut(args.output_dir, args.chromosmoe)
     file_in = FileIn(args.plink_genotype,
                      args.parquet_phenotype)
     pheno_df = file_in.get_pheno()
     covar_df = file_in.get_covar()
     geno_df = file_in.get_geno()
+    logging.info("Computing summary statistics with p-val filter {} "
+                 "and MAF filter {}".format(args.pval_filter, args.maf_filter))
     ss_df = trans.map_trans(geno_df,
-                                       pheno_df,
-                                       covar_df,
-                                       batch_size=2000,
-                                       pval_threshold=1e-5,
-                                       maf_threshold=0.05,
-                                       verbose=False)
-    print(ss_df.head())
-    print(ss_df.columns)
-    print(ss_df.shape)
+                               pheno_df,
+                               covar_df,
+                               batch_size=2000,
+                               pval_threshold=1e-5,
+                               maf_threshold=0.05,
+                               verbose=False)
+    gwas_df = file_out.make_gwas(ss_df, len(file_in.individuals))
+    n_genes = len(gwas_df['gene'].drop_duplicates())
+    for i, (pheno, df_i) in enumerate(gwas_df.groupby('gene')):
+        logging.log(7, "Writing pheno {}/{}".format(i, n_genes))
+        file_out.write_text(df_i, pheno)
+
+    logging.info("Finished in {:.2f} seconds".format(timer() - start))
+
+
 
 
 
@@ -177,7 +162,10 @@ if __name__ == '__main__':
     # parser.add_argument("-plink_genotype_pattern")
     parser.add_argument("-parquet_phenotype")
     parser.add_argument("-output_dir")
+    parser.add_argument("-chromosome")
     parser.add_argument('--parsimony', default=10, type=int)
+    parser.add_argument('--pval_filter', type=float, default=1.0)
+    parser.add_argument('--maf_filter', type=float, default=0.05)
 
     args = parser.parse_args()
 
