@@ -1,108 +1,77 @@
 import os
 import logging
 from timeit import default_timer as timer
-from pyarrow import parquet as pq
-import pandas
-import numpy
 import re
 import sys
-import rpy2.robjects as robjects
-from rpy2.robjects import pandas2ri
 import subprocess
+
 from genomic_tools_lib import Logging
 from genomic_tools_lib.file_formats import Parquet
 
-
-import pandas as pd
 import tensorqtl
-import os
-import helpers
-import logging
-import numpy as np
+from pyarrow import parquet as pq
+import pandas
+import numpy
 
 
-def merge_data_sources(pheno_index, covar_fp, geno_fp):
-    """
-
-    :param pheno_index:
-    :param covar_fp:
-    :param geno_fp:
-    :return:
-    """
-    covar_df = None
-    fam_df = helpers.load_fam_df(geno_fp + '.fam')
-    intersection_index = fam_df.index.astype('str').intersection(pheno_index)
-    if covar_fp is not None:
-        logging.info("Loading covariates from {}".format(covar_fp))
-        covar_df = helpers.load_pheno_covar_df(covar_fp)
-        covar_df.index = covar_df.index.astype('str')
-        covar_df = covar_df[~covar_df.index.duplicated()]
-        intersection_index = covar_df.index.intersection(intersection_index)
-        covar_df = covar_df.reindex(intersection_index)
-    else:
-        covar_df = pd.DataFrame(index = intersection_index)
-
-    assert len(intersection_index) > 0, "Merging matched 0 samples."
-    logging.info("After filtering, working with {} samples".format(len(intersection_index)))
-    return intersection_index, covar_df
-
-def main(args):
-    """
-    1. load phenotype and covariate data
-    2. transform, write, and gzip BED file
-    3. load BED and genotype
-    :param args:
-    :return:
-    """
-    # Ensure env is set up correctly:
-    single_chrom_files = helpers.check_if_formattable(args.geno)
-    if single_chrom_files:
-        files = helpers.format_chrom_file_names(args.geno)
-    else:
-        files = [args.geno]
-    for file in files:
-        helpers.ensure_files_in_place(file)
-    helpers.check_cuda()
-    helpers.make_dir(args.out)
-
-    # covar_df = helpers.load_pheno_covar_df(args.covar)
-    pheno_df = helpers.load_pheno_covar_df(args.pheno)
-    pheno_df.index = pheno_df.index.astype('str')
-    intersection_index, covar_df = merge_data_sources(pheno_df.index, args.covar, files[0])
-    pheno_df = pheno_df.reindex(intersection_index).T
-    n_phenos = helpers.find_n_phenos(args.pheno)
-
-    trans_df = pd.DataFrame(columns = ['variant_id', 'phenotype_id', 'pval', 'maf'])
-
-    for file in files:
-        plink_reader = tensorqtl.genotypeio.PlinkReader(file,
-                                                        select_samples = [str(i) for i in intersection_index],
-                                                        verbose = False)
-        geno_df = plink_reader.load_genotypes()
-        logging.info("Loaded genotype data from {}".format(file))
-        trans_df_i = tensorqtl.trans.map_trans(geno_df,
-                                               pheno_df,
-                                               covar_df,
-                                               batch_size = 2000,
-                                               pval_threshold = args.pval_threshold,
-                                               maf_threshold = args.maf_threshold,
-                                               verbose = False)
-        trans_df = trans_df.append(trans_df_i)
-        logging.info("Finished analysis for genotype file {}".format(file))
-
-    # Write logs and write output
-    logging.info('Finished with QTL analysis')
-    n_matched_phenos = len(trans_df['phenotype_id'].unique())
-    if n_matched_phenos < n_phenos:
-        s = "Only {n_matched_phenos} out of {n_phenos} phenotypes showed significant associations." \
-            " The p-value threshold may be too low".format(n_matched_phenos = n_matched_phenos,
-                                                           n_phenos = n_phenos)
-        logging.info(s)
-    trans_results_fp = os.path.join(args.out, TODAY + '_trans-qtl-results.txt')
-    trans_df.to_csv(trans_results_fp, sep = '\t', index = False)
+# def main(args):
+#     """
+#     1. load phenotype and covariate data
+#     2. transform, write, and gzip BED file
+#     3. load BED and genotype
+#     :param args:
+#     :return:
+#     """
+#     # Ensure env is set up correctly:
+#     single_chrom_files = helpers.check_if_formattable(args.geno)
+#     if single_chrom_files:
+#         files = helpers.format_chrom_file_names(args.geno)
+#     else:
+#         files = [args.geno]
+#     for file in files:
+#         helpers.ensure_files_in_place(file)
+#     helpers.check_cuda()
+#     helpers.make_dir(args.out)
+#
+#     # covar_df = helpers.load_pheno_covar_df(args.covar)
+#     pheno_df = helpers.load_pheno_covar_df(args.pheno)
+#     pheno_df.index = pheno_df.index.astype('str')
+#     intersection_index, covar_df = merge_data_sources(pheno_df.index, args.covar, files[0])
+#     pheno_df = pheno_df.reindex(intersection_index).T
+#     n_phenos = helpers.find_n_phenos(args.pheno)
+#
+#     trans_df = pd.DataFrame(columns = ['variant_id', 'phenotype_id', 'pval', 'maf'])
+#
+#     for file in files:
+#         plink_reader = tensorqtl.genotypeio.PlinkReader(file,
+#                                                         select_samples = [str(i) for i in intersection_index],
+#                                                         verbose = False)
+#         geno_df = plink_reader.load_genotypes()
+#         logging.info("Loaded genotype data from {}".format(file))
+#         trans_df_i = tensorqtl.trans.map_trans(geno_df,
+#                                                pheno_df,
+#                                                covar_df,
+#                                                batch_size = 2000,
+#                                                pval_threshold = args.pval_threshold,
+#                                                maf_threshold = args.maf_threshold,
+#                                                verbose = False)
+#         trans_df = trans_df.append(trans_df_i)
+#         logging.info("Finished analysis for genotype file {}".format(file))
+#
+#     # Write logs and write output
+#     logging.info('Finished with QTL analysis')
+#     n_matched_phenos = len(trans_df['phenotype_id'].unique())
+#     if n_matched_phenos < n_phenos:
+#         s = "Only {n_matched_phenos} out of {n_phenos} phenotypes showed significant associations." \
+#             " The p-value threshold may be too low".format(n_matched_phenos = n_matched_phenos,
+#                                                            n_phenos = n_phenos)
+#         logging.info(s)
+#     trans_results_fp = os.path.join(args.out, TODAY + '_trans-qtl-results.txt')
+#     trans_df.to_csv(trans_results_fp, sep = '\t', index = False)
 
 class FileOut:
     def __init__(self, out_fp, gzip=False):
+        pass
 
 
 class FileIn:
