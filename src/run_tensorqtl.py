@@ -26,7 +26,7 @@ class FileOut:
                       'imputation_status', 'n_cases', 'gene', 'region_id']
         if parquet_geno_metadata is not None:
             self.metadata = pq.read_table(parquet_geno_metadata).to_pandas()
-            self.metadata.set_index('id')
+            self.metadata = self.metadata.set_index('rsid')
         else:
             self.metadata = None
     def write_text(self, df, pheno):
@@ -52,12 +52,17 @@ class FileOut:
                   'maf': 'frequency'}
         df = df.rename(mapper=map_dd, axis=1)
         df['sample_size'] = [n_samples] * ll
+        print(df.head())
         if self.metadata is not None:
+            print(self.metadata.head())
             df = df.join(self.metadata, how='left', sort=False)
             map_dd = {'allele_0': 'non_effect_allele',
-                      'allele_1': 'effect_allele'}
+                      'allele_1': 'effect_allele',
+                      'id': 'panel_variant_id'}
             df = df.rename(mapper=map_dd, axis=1)
-            df = df.fillna('NA')
+            print(df.head())
+        df = df.astype(dtype={'chromosome': int, 'position': int})
+        df = df.fillna('NA')
         return self._fill_empty_gwas_cols(df)
 
     def _fill_empty_gwas_cols(self, df, fill='NA'):
