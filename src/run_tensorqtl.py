@@ -36,7 +36,7 @@ class FileOut:
                                                    chr=self.chromosome))
         df.to_csv(fp, sep = "\t", index=False)
 
-    def make_gwas(self, df, n_samples):
+    def make_gwas(self, df, n_samples, bim_fp):
         """
         Take tensorqtl output, with cols
         ['variant_id', 'phenotype_id', 'pval', 'b', 'b_se', 'maf']
@@ -61,9 +61,33 @@ class FileOut:
                       'id': 'panel_variant_id'}
             df = df.rename(mapper=map_dd, axis=1)
             print(df.head())
+        df.loc[df.chromosome.isna()] = self._merge_bim(df.loc[df.chromosome.isna()], bim_fp)
+        # df = self._merge_bim(df, bim_fp)
         df = df.astype(dtype={'chromosome': int, 'position': int})
         df = df.fillna('NA')
         return self._fill_empty_gwas_cols(df)
+
+    def _merge_bim(self, df, fp):
+        bim_info_cols = ['chromosome',
+                         'position',
+                         'effect_allele',
+                         'non_effect_allele']
+        bim_df = pandas.read_csv(fp,
+                         sep="\s",
+                         engine='python',
+                         header=None,
+                         names=['chromosome_bim',
+                                'variant_id_bim',
+                                'XXX',
+                                'position_bim',
+                                'non_effect_allele_bim',
+                                'effect_allele'])
+        bim_df = bim_df.set_index('variant_id_bim')
+        df = df.join(bim_df, how = 'left')
+        for col in bim_info_cols:
+            df[col] = df[col].fillna(df[col + '_bim'])
+        return df
+
 
     def _fill_empty_gwas_cols(self, df, fill='NA'):
         ll = df.shape[0]
@@ -190,7 +214,8 @@ def run(args):
         ss_df.to_csv(os.path.join(args.output_dir, "summ-stats-all.txt"), sep="\t")
         file_out.metadata.to_csv(os.path.join(args.output_dir, "snp-metadata.txt"), sep="\t")
         exit(0)
-    gwas_df = file_out.make_gwas(ss_df, len(file_in.individuals))
+    gwas_df = file_out.make_gwas(ss_df, len(file_in.individuals),
+                                 file_in.geno_pre + file_in.BIM)
     logging.info("Writing results")
     n_genes = len(gwas_df['gene'].drop_duplicates())
     for i, (pheno, df_i) in enumerate(gwas_df.groupby('gene')):
