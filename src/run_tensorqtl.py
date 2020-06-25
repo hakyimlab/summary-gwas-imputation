@@ -59,6 +59,7 @@ class FileOut:
         ll = df.shape[0]
         for i in self.GWAS_COLS:
             if i not in df:
+                logging.log(7, "Filling column {}".format(i))
                 df[i] = [fill] * ll
         return df[self.GWAS_COLS]
 
