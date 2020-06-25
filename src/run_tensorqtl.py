@@ -180,6 +180,11 @@ def run(args):
                                pval_threshold=args.pval_filter,
                                maf_threshold=args.maf_filter,
                                verbose=False)
+    if args.dump_ss:
+        logging.info("Dumping SS")
+        ss_df.to_csv(os.path.join(args.output_dir, "summ-stats-all.txt"), sep="\t")
+        file_out.metadata.to_csv(os.path.join(args.output_dir, "snp-metadata.txt"), sep="\t")
+        exit(0)
     gwas_df = file_out.make_gwas(ss_df, len(file_in.individuals))
     logging.info("Writing results")
     n_genes = len(gwas_df['gene'].drop_duplicates())
@@ -208,6 +213,7 @@ if __name__ == '__main__':
     parser.add_argument('--parsimony', default=10, type=int)
     parser.add_argument('--pval_filter', type=float, default=1.0)
     parser.add_argument('--maf_filter', type=float, default=0.05)
+    parser.add_argument('--dump_ss', default=False, action='store_true')
 
     args = parser.parse_args()
 
