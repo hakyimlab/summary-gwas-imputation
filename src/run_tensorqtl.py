@@ -52,17 +52,16 @@ class FileOut:
                   'maf': 'frequency'}
         df = df.rename(mapper=map_dd, axis=1)
         df['sample_size'] = [n_samples] * ll
-        print(df.head())
         if self.metadata is not None:
-            print(self.metadata.head())
             df = df.join(self.metadata, how='left', sort=False)
             map_dd = {'allele_0': 'non_effect_allele',
                       'allele_1': 'effect_allele',
                       'id': 'panel_variant_id'}
             df = df.rename(mapper=map_dd, axis=1)
-            print(df.head())
+        print(df.shape)
         df.loc[df.chromosome.isna()] = self._merge_bim(df.loc[df.chromosome.isna()], bim_fp)
         # df = self._merge_bim(df, bim_fp)
+        print(df.shape)
         df = df.astype(dtype={'chromosome': int, 'position': int})
         df = df.fillna('NA')
         return self._fill_empty_gwas_cols(df)
@@ -81,7 +80,7 @@ class FileOut:
                                 'XXX',
                                 'position_bim',
                                 'non_effect_allele_bim',
-                                'effect_allele'])
+                                'effect_allele_bim'])
         bim_df = bim_df.set_index('variant_id_bim')
         df = df.join(bim_df, how = 'left')
         for col in bim_info_cols:
