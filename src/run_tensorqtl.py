@@ -1,7 +1,6 @@
 import os
 import logging
 from timeit import default_timer as timer
-import re
 import sys
 
 from genomic_tools_lib import Logging, Utilities
@@ -10,7 +9,6 @@ from genomic_tools_lib.file_formats import Parquet
 from genomic_tools_lib.external_tools.tensorqtl import genotypeio, trans
 from pyarrow import parquet as pq
 import pandas
-import numpy
 
 class FileOut:
     def __init__(self, out_dir, chromosome, parquet_geno_metadata=None):
@@ -58,10 +56,10 @@ class FileOut:
                       'allele_1': 'effect_allele',
                       'id': 'panel_variant_id'}
             df = df.rename(mapper=map_dd, axis=1)
-        print(df.shape)
-        df.loc[df.chromosome.isna()] = self._merge_bim(df.loc[df.chromosome.isna()], bim_fp)
-        # df = self._merge_bim(df, bim_fp)
-        print(df.shape)
+        # print(df.shape)
+        # df.loc[df.chromosome.isna()] = self._merge_bim(df.loc[df.chromosome.isna()], bim_fp)
+        df = self._merge_bim(df, bim_fp)
+        # print(df.shape)
         df = df.astype(dtype={'chromosome': int, 'position': int})
         df = df.fillna('NA')
         return self._fill_empty_gwas_cols(df)
