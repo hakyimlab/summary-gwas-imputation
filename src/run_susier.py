@@ -161,7 +161,7 @@ def run(args):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser("Run COLOC")
+    parser = argparse.ArgumentParser("Run SusieR")
     parser.add_argument("-parquet_genotype_folder", help="Parquet Genotype file")
     parser.add_argument("-parquet_genotype_pattern", help="Parquet Genotype file")
     parser.add_argument("-parquet_genotype_metadata", help="Parquet Genotype variant metadata file")

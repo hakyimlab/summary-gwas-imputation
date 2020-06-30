@@ -1,7 +1,6 @@
 import os
 import logging
 from timeit import default_timer as timer
-import re
 import sys
 
 from genomic_tools_lib import Logging, Utilities
@@ -10,7 +9,6 @@ from genomic_tools_lib.file_formats import Parquet
 from genomic_tools_lib.external_tools.tensorqtl import genotypeio, trans
 from pyarrow import parquet as pq
 import pandas
-import numpy
 
 class FileOut:
     def __init__(self, out_dir, chromosome, parquet_geno_metadata=None):

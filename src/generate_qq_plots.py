@@ -18,7 +18,7 @@ from genomic_tools_lib.file_formats import Parquet
 class RContext:
     def __init__(self):
         self.sources = [os.path.join(os.path.dirname(__file__), 'generate_qq_plots.R'),
-                        "/gpfs/data/im-lab/nas40t2/owen/lab-tools/paper_themes.R"]
+                        "/vol/bmd/meliao/software/other_software/lab-tools/paper_themes.R"]
 
         self._init_R()
 
@@ -57,8 +57,8 @@ class FileIO:
         """
         self.out_dir = out_dir
         self.in_dir = in_dir
-        self.K_FP = "chr-{chr}/MatrixEQTL_{pheno}_chr{chr}.txt"
-        self.RE_FNAME = re.compile("MatrixEQTL_(.*)_chr(.*).txt")
+        self.K_FP = "chr-{chr}/tensorqtl-summ-stats_{pheno}_chr{chr}.txt.gz"
+        self.RE_FNAME = re.compile("tensorqtl-summ-stats_(.*)_chr(.*).txt.gz")
         self.K_DIR = "chr-{chr}"
         if pheno_name_map_fp is not None:
             self.pheno_name_map = self._load_pheno_map(pheno_name_map_fp,
