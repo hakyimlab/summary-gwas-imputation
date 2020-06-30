@@ -18,7 +18,7 @@ class FileOut:
         self.chromosome = chromosome
         self.dir_pattern = "chr-{chr}".format(chr=chromosome)
         Utilities.maybe_create_folder(os.path.join(out_dir, self.dir_pattern))
-        self.file_pattern = "tensorqtl-summ-stats_{pheno}_chr{chr}.txt"
+        self.file_pattern = "tensorqtl-summ-stats_{pheno}_chr{chr}.txt.gz"
         self.GWAS_COLS = ['variant_id', 'panel_variant_id', 'chromosome',
                       'position', 'effect_allele', 'non_effect_allele',
                       'current_build', 'frequency', 'sample_size', 'zscore',
@@ -34,6 +34,7 @@ class FileOut:
                           self.dir_pattern,
                           self.file_pattern.format(pheno=pheno,
                                                    chr=self.chromosome))
+        df.sort_values('position', inplace=True)
         df.to_csv(fp, sep = "\t", index=False)
 
     def make_gwas(self, df, n_samples, bim_fp):
@@ -58,10 +59,8 @@ class FileOut:
                       'allele_1': 'effect_allele',
                       'id': 'panel_variant_id'}
             df = df.rename(mapper=map_dd, axis=1)
-        print(df.shape)
-        df.loc[df.chromosome.isna()] = self._merge_bim(df.loc[df.chromosome.isna()], bim_fp)
-        # df = self._merge_bim(df, bim_fp)
-        print(df.shape)
+        # df.loc[df.chromosome.isna()] = self._merge_bim(df.loc[df.chromosome.isna()], bim_fp)
+        df = self._merge_bim(df, bim_fp)
         df = df.astype(dtype={'chromosome': int, 'position': int})
         df = df.fillna('NA')
         return self._fill_empty_gwas_cols(df)
