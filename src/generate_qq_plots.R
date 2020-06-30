@@ -17,7 +17,7 @@ log_stdout <- function(message, date=TRUE){
 #log_stdout("Adding functions to R namespace")
 make_pval_plot <- function(pvalues, fp, pheno_name){
  # log_stdout("Opened make_pval_plot function")
-  title_s <- paste0("Metabolite ", pheno_name)
+  title_s <- paste0("UKB Image Derived Phenotype ", pheno_name)
   plt <- (gg_qqplot(pvalues)
             + labs(title = title_s)
             + scatter_base_theme_())
