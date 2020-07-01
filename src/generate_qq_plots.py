@@ -35,6 +35,8 @@ class RContext:
         self._make_plot = self.R['make_pval_plot']
 
     def make_plot(self, pvalues, fp, pheno_name, pheno_num):
+#        if os.path.isfile(fp):
+#            logging.log(9, "Skipping -- already present: {}".format(pheno_name))
         pheno_tag = str(pheno_num) + ": " + pheno_name
         pvals_r = robjects.FloatVector(pvalues)
         logging.log(5, "Beginning R call: {}".format(pheno_tag))
@@ -90,6 +92,10 @@ class FileIO:
 
     def load_all(self):
         for i, f in self.pheno_name_map.iterrows():
+            out_fp = self.out_name_pattern.format(f.pheno_num)
+            if os.path.isfile(out_fp):
+                logging.log(9, "Already present-skipping {}".format(f.pheno_num))
+                continue
             pvals = self._load_single_pheno(f.pheno_num)
             if len(pvals) == 0:
                 continue
@@ -119,6 +125,7 @@ class FileIO:
             except FileNotFoundError:
                 logging.warning("Results for chromosome {} not found".format(chr))
         df = pandas.DataFrame(data=list(phenos), columns=['pheno_name'])
+        df = df.sort_values(by='pheno_name')
         df['pheno_num'] = df['pheno_name']
         logging.info("Discovered {} phenotypes".format(df.shape[0]))
 
