@@ -1,5 +1,5 @@
 __author__ = "alvaro barbeira"
-
+import pandas
 
 def add_gwas_arguments_to_parser(parser):
 
@@ -56,3 +56,31 @@ def get_filter(chromosome_position_tree):
         return False
 
     return (lambda comps: _filter(comps, chromosome_position_tree))
+
+def load_region_df(fp):
+    """
+
+    :param fp: expecting tab-separated file with headers
+            ['start', 'stop', 'chr', 'region_id']
+    :return: pandas DataFrame
+    """
+    df = pandas.read_table(fp)
+    df['chromosome'] = df.chr.str.lstrip('chr').astype(int)
+    return df
+
+def annotate_gwas(region_df, gwas_df):
+    """
+
+    :param region_df: Pandas DataFrame, expected to have columns
+                ['start', 'stop', 'chr', 'region_id']
+    :param gwas_df: Pandas DataFrame, expected to have columns
+                ['chromosome', 'position']
+    :return: gwas_df with column 'region_id' added
+    """
+    gwas_df['region_id'] = ['-1'] * gwas_df.shape[0]
+    for r_ in region_df.itertuples():
+        gwas_df.loc[(gwas_df['chromosome']==r_.chromosome )&
+                    (gwas_df['position'] >= r_.start) &
+                    (gwas_df['position'] < r_.stop), 'region_id'] = r_.region_id
+
+    return gwas_df

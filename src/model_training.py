@@ -25,11 +25,20 @@ from genomic_tools_lib.miscellaneous import matrices, Genomics, Math
 
 ###############################################################################
 import rpy2.robjects as robjects
-from rpy2.robjects import numpy2ri
-numpy2ri.activate()
+# from rpy2.robjects import numpy2ri
+# numpy2ri.activate()
+
+# from rpy2.robjects import pandas2ri
+# pandas2ri.activate()
+# from rpy2.robjects.conversion import py2rpy, rpy2py
+
+# from rpy2.robjects import numpy2ri
+# numpy2ri.activate()
 
 from rpy2.robjects import pandas2ri
-pandas2ri.activate()
+from rpy2.robjects.conversion import localconverter
+# pandas2ri.activate()
+
 
 def initialize():
     global train_elastic_net
@@ -39,6 +48,18 @@ def initialize():
     robjects.r['source'](path)
     train_elastic_net = robjects.r['train_elastic_net']
     set_seed = robjects.r['set_seed']
+
+def _r_to_pandas(r_df):
+    with localconverter(robjects.default_converter + pandas2ri.converter):
+        pd_from_r_df = robjects.conversion.rpy2py(r_df)
+    return pd_from_r_df
+
+def _pandas_to_r(pd_df):
+    with localconverter(robjects.default_converter + pandas2ri.converter):
+        r_from_pd_df = robjects.conversion.py2rpy(pd_df)
+
+    return r_from_pd_df
+
 ###############################################################################
 
 def _save(d_, features_, features_data_, gene):
@@ -77,7 +98,7 @@ def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_,
         # observation weights, not explanatory variable weight :( , x_weight = x_w)
         res = train_elastic_net(y, x, penalty_factor=x_w,
                                 n_train_test_folds=nested_folds, alpha=alpha)
-    return pandas2ri.ri2py(res[0]), pandas2ri.ri2py(res[1])
+    return _r_to_pandas(res[0]), _r_to_pandas(res[1])
 
 ###############################################################################
 
@@ -193,8 +214,10 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
 
     # features_ = Genomics.entries_for_gene_annotation(data_annotationn_, args.window, features_metadata)
     if weights:
+        logging.log(5, "Sending weights")
         x_w = robjects.FloatVector(features_.w.values)
     else:
+        logging.log(5, "Not sending weights")
         x_w = None
 
     if features_.shape[0] == 0:
@@ -307,6 +330,11 @@ def run(args):
         # x_weights = get_weights(args.features_weights, pre_parsed=True)
         # whitelist = { v for v in x_weights.variant_id}
 
+    if args.preparsed_features:
+        logging.info("Loading preparsed features")
+        features = get_dapg_preparsed(args.preparsed_features)
+        d_handler.add_features_preparsed(features)
+
     f_handler = Parquet.MultiFileGenoHandler(args.features,
                                              args.features_annotation)
     logging.info("Loading geno metadata")
@@ -417,6 +445,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", default="elastic_net", help="'elastic_net' or 'ols'")
     parser.add_argument("--gene_whitelist", nargs="+", default=None)
     parser.add_argument("--preparsed_weights", help="Pre-parsed dapg weights")
+    parser.add_argument("--preparsed_features", help="Pre-parsed features (not weights)")
     parser.add_argument("--dont_prune", action="store_true")
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)

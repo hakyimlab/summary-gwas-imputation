@@ -25,9 +25,11 @@ class RContext:
         R = robjects.r
         # pandas2ri.activate()
         logging.log(7, "Initialized R instance.")
-        self._susier = importr('susieR')
-        self._susie_f = self._susier.susie
-        self._susie_pip_f = self._susier.susie_get_pip
+        _susier = importr('susieR')
+        _stats = importr('stats')
+        self._susie_rss_f = _susier.susie_rss
+        self._susie_pip_f = _susier.susie_get_pip
+        self._cor_f = _stats.cor
         logging.log(7, "Loaded libraries and functions into R.")
 
     @staticmethod
@@ -55,38 +57,33 @@ class RContext:
         p = pheno.reindex(individuals)
         return robjects.FloatVector(p.values)
 
-    def compute_pip(self, geno, pheno_generator, fileio, region_id):
+    def compute_pip(self, geno, ss_generator, fileio, region_id):
         logging.log(5, "Creating R object for genotype")
         # print("N_individuals: {}, N_varaints: {}".format(len(geno['individual']),
         #                                                  len(geno) - 1))
         g_mat, individuals, names = self._to_rpy2(geno)
+        g_cor = self._cor_f(g_mat)
         ll = len(names)
         pip_df = pandas.DataFrame(columns=['variant_id', 'pip', 'phenotype'])
-        for pheno in pheno_generator():
+        for ss_zscores in ss_generator():
             # print(pheno.shape)
-            if fileio.test_present(region_id, pheno.name):
+            if fileio.test_present(region_id, ss_zscores.name):
                 logging.log(9,"Skipping pheno already present")
                 continue
-            p_vec = self._pheno_to_rpy2(pheno, individuals)
-            logging.log(8, "Calculating susie PIP for pheno {}".format(pheno.name))
-            susie_fit = self._susie_f(g_mat, p_vec)
+            z_vec = self._pheno_to_rpy2(ss_zscores, names)
+            logging.log(8, "Calculating susie PIP for pheno {}".format(ss_zscores.name))
+            susie_fit = self._susie_rss_f(z_vec, g_cor)
             susie_pip = self._susie_pip_f(susie_fit)
             # print(susie_pip[:5])
             # print(numpy.asarray(susie_pip)[:5])
             pips = pandas.DataFrame({'variant_id':names,
                                        'pip': susie_pip,
-                                       'phenotype': [pheno.name] * ll})
-            fileio.write_region(pips, region_id, pheno.name)
-        #
-        #     # print(pips.head())
-        #     pip_df = pip_df.append(pips, sort=False)
-        # return pip_df
+                                       'phenotype': [ss_zscores.name] * ll})
+            fileio.write_region(pips, region_id, ss_zscores.name)
 
 
 class PythonContext:
-    def __init__(self, pheno_fp, metadata_pattern, geno_pattern,
-                 region_fp, whitelist_fp, sample_size=None, n_batches=None,
-                 batch=None):
+    def __init__(self, pheno_fp, metadata_pattern, geno_pattern, ss_dir, ss_format, region_fp, whitelist_fp, sample_size=None, n_batches=None, batch=None):
         """
         0. Save filepaths and file patterns.
         1. Load region_df.
@@ -111,6 +108,8 @@ class PythonContext:
         self._pheno = pq.ParquetFile(pheno_fp)
         self.geno_pattern = geno_pattern
         self.metadata_pattern = metadata_pattern
+        self.ss_dir = ss_dir
+        self.ss_format = ss_format
         self.whitelist, phenos = self._load_whitelist(whitelist_fp=whitelist_fp,
                                                           n_batches=n_batches,
                                                           batch=batch)
@@ -175,10 +174,17 @@ class PythonContext:
         logging.log(9, "Working with sample size {}".format(len(out_set)))
         return [i for i in out_set]
 
-    # def _load_phenos(self, individuals, names):
-    #     return Parquet._read(self._pheno,
-    #                          columns=names,
-    #                          specific_individuals=individuals)
+    def load_region_ss(self, region_name, pheno):
+        r_ = self._region_df[region_name]
+        fname_ = self.ss_format.format(chr = r_.chromosome,
+                                       pheno = pheno)
+        df = pandas.read_csv(os.path.join(self.ss_dir, fname_), sep="\t",
+                             usecols=['variant_id', 'effect_size', 'standard_error', 'position'])
+        df = df[df['position'] <= r_.end & df['position'] >= r_.start]
+        df = df.set_index('variant_id')
+        df[pheno] = df['effect_size'] / df['standard_error']
+        return df[pheno]
+
 
     def load_region_genotype(self, region_name):
         region_ = self._region_df.loc[region_name]
@@ -197,13 +203,11 @@ class PythonContext:
                              columns=snps,
                              specific_individuals=self.individuals)
 
-    def generate_phenos(self, region):
+    def generate_ss(self, region):
         def f(region=region):
             names = list(self.whitelist[region])
             for name in names:
-                yield pandas.Series(self.pheno[name],
-                                    index=self.pheno['individual'],
-                                    name=name)
+                yield self.load_region_ss(region, name)
         return f
 
 class FileIO:
@@ -248,6 +252,8 @@ def run(args):
     p_context = PythonContext(args.pheno,
                               args.metadata_pattern,
                               args.geno_pattern,
+                              args.ss_dir,
+                              args.ss_format,
                               args.region,
                               args.whitelist,
                               n_batches=args.n_batches,
@@ -259,7 +265,7 @@ def run(args):
         logging.log(9, "Working on region {} / {} : {} phenos".format(i + 1, n_regions, n_phenos_))
         geno = p_context.load_region_genotype(region)
         r_context.compute_pip(geno,
-                              p_context.generate_phenos(region),
+                              p_context.generate_ss(region),
                               f_handler,
                               region)
     end_time = timer() - start_time
@@ -276,6 +282,8 @@ if __name__ == '__main__':
     parser.add_argument('-metadata_pattern',
                         help="Parquet annotation files, formattable with a {chr} argument",
                         required=True)
+    parser.add_argument('-ss_dir', help="Root directory with summary statistics", required=True)
+    parser.add_argument('-ss_format', help="Formattable with {chr} and {pheno}", required=True)
     parser.add_argument('-geno_pattern',
                         help="Parquet genotype files, formattable with a {chr} argument",
                         required=True)

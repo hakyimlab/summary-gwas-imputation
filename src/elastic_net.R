@@ -31,7 +31,7 @@ nested_cv_elastic_net_perf <- function(x, y, n_samples, n_train_test_folds, n_k_
   #
   # The mean and standard deviation of R^2 over all folds is then reported, and the p-values
   # are combined using Fisher's method.
-    message(n_train_test_folds)
+  #   message(n_train_test_folds)
   R2_folds <- rep(0, n_train_test_folds)
   corr_folds <- rep(0, n_train_test_folds)
   zscore_folds <- rep(0, n_train_test_folds)
@@ -104,6 +104,10 @@ set_seed <- function(seed = NA) {
 }
 
 train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.5, observation_weights=NULL, penalty_factor=NULL,  matrixify=FALSE) {
+    # bb <- min(5, length(y))
+    # message(print(y[1:bb]))
+    # cc <- min(5, ncol(x))
+    # message(print(x[1:bb,1:cc]))
     if (matrixify) {
      x <- matrixify_(x)
      y <- as.double(unlist(data.frame(y)[1]))

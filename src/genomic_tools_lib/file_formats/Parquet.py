@@ -427,7 +427,8 @@ class PhenoDataHandler:
 
         self._features_metadata = None
         self.send_weights = False
-        self._features_weights = None
+        self.send_features = False
+        self._features_preparsed = None
         self.features = None
 
     def _load_da_manual(self, n_batches = None, batch = None):
@@ -446,7 +447,7 @@ class PhenoDataHandler:
         :param metadata: pandas DataFrame
         """
         self._features_metadata = metadata
-        self._merge_metadata_weights()
+        self._merge_metadata_features()
 
     def add_features_weights(self, weights, pheno_col='gene_id'):
         """
@@ -465,25 +466,48 @@ class PhenoDataHandler:
             self.data_annotation.loc[self.data_annotation.gene_id.isin(gene_ids)]
         logging.info("Weights loaded for {} genes".format(len(gene_ids)))
 
-        self._features_weights = weights
-        self._merge_metadata_weights()
+        self._features_preparsed = weights
+        self.send_weights = True
+        self._merge_metadata_features()
 
-    def _merge_metadata_weights(self):
-        if (self._features_weights is not None) and \
+    def add_features_preparsed(self, features, pheno_col='gene_id'):
+        """
+
+        :param features: pandas DataFrame
+        :param pheno_col: str. Name of col with phenotype data
+        :return:
+        """
+        features = features.rename(mapper={'variant_id': 'id', pheno_col: 'gene_id'}, axis=1)
+
+        # Only keep the intersection of genes from weights, genes from data
+        ids_from_weights = set(features.gene_id)
+        ids_from_data = set(self.data_annotation.gene_id)
+        gene_ids = ids_from_weights.intersection(ids_from_data)
+        weights = features.loc[features.gene_id.isin(gene_ids)]
+        self.data_annotation = \
+            self.data_annotation.loc[self.data_annotation.gene_id.isin(gene_ids)]
+        logging.info("Weights loaded for {} genes".format(len(gene_ids)))
+
+        self._features_preparsed = features
+        self.send_weights = False
+        self._merge_metadata_features()
+
+    def _merge_metadata_features(self):
+        if (self._features_preparsed is not None) and \
         (self._features_metadata is not None):
-            logging.info( 'Merging geno metadata and weights')
-            f_w = self._features_weights.set_index('id')
+            logging.info('Merging geno metadata and preparsed features')
+            f_p = self._features_preparsed.set_index('id')
             m = self._features_metadata.set_index('id')
             cols = list(m.columns)
             cols.extend(['w', 'gene_id'])
-            f_w = f_w.join(m, how='left', rsuffix='_m')[cols]
-            f_w['id'] = f_w.index
-            self._features_weights = f_w.groupby('gene_id')
-            self.send_weights = True
+            f_p = f_p.join(m, how='left', rsuffix='_m')[cols]
+            f_p['id'] = f_p.index
+            self._features_preparsed = f_p.groupby('gene_id')
+            self.send_features = True
 
     def get_features(self, pheno):
-        if self.send_weights:
-            return self._features_weights.get_group(pheno)
+        if self.send_features:
+            return self._features_preparsed.get_group(pheno)
         else:
             return self._features_metadata[['id', 'chromosome']]
 
