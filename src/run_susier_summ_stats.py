@@ -10,6 +10,7 @@ import rpy2.robjects as robjects
 from rpy2.robjects import pandas2ri
 from rpy2.robjects.packages import importr
 import subprocess
+from copy import deepcopy
 from genomic_tools_lib import Logging
 from genomic_tools_lib.file_formats import Parquet
 from genomic_tools_lib.file_formats.gwas import Utilities as GWASUtilities
@@ -40,46 +41,49 @@ class RContext:
         logging.log(5, "Done conversion R -> Pandas")
         return df_pd
 
-    @staticmethod
-    def _to_rpy2(dd):
-        individuals = dd['individual']
-        names = list(dd.keys())
-        names.remove('individual')
-        x = numpy.array([dd[v] for v in names])
-        dimnames = robjects.ListVector([(1, robjects.StrVector(individuals)),
-                                        (2, robjects.StrVector(names))])
-        y = robjects.r["matrix"](robjects.FloatVector(x.flatten()),
-                                 nrow=len(individuals), dimnames=dimnames)
-        return y, individuals, names
+    def _to_rpy2(self, geno, ss_pheno):
+        # dd = deepcopy(geno)
+        individuals_arr = geno['individual']
+        geno_variants = set(geno.keys()).remove('individual')
+        ss_variants = set(ss_pheno.index)
+        keep_variants = sorted(list(geno_variants.intersection(ss_variants)))
+
+        geno_np_arr = numpy.array([geno[v] for v in keep_variants])
+        dimnames = robjects.ListVector([(1, robjects.StrVector(individuals_arr)),
+                                        (2, robjects.StrVector(keep_variants))])
+        geno_mat = robjects.r["matrix"](robjects.FloatVector(geno_np_arr.flatten()),
+                                 nrow=len(individuals_arr), dimnames=dimnames)
+        geno_cor_mat = self._cor_f(geno_mat)
+        pheno_vec = self._pheno_to_rpy2(ss_pheno, keep_variants)
+        return geno_cor_mat, pheno_vec, keep_variants
 
     @staticmethod
-    def _pheno_to_rpy2(pheno, individuals):
-        p = pheno.drop_duplicates().reindex(individuals)
+    def _pheno_to_rpy2(pheno, variants):
+        p = pheno.reindex(variants)
         return robjects.FloatVector(p.values)
 
     def compute_pip(self, geno, ss_generator, fileio, region_id):
         logging.log(5, "Creating R object for genotype")
         print("Geno info: N_individuals: {}, N_varaints: {}".format(len(geno['individual']),
                                                           len(geno) - 1))
-        g_mat, individuals, names = self._to_rpy2(geno)
-        g_cor = self._cor_f(g_mat)
-        ll = len(names)
-        pip_df = pandas.DataFrame(columns=['variant_id', 'pip', 'phenotype'])
+        # g_mat, individuals, names = self._to_rpy2(geno)
+        # g_cor = self._cor_f(g_mat)
+        # ll = len(names)
         for ss_zscores in ss_generator():
-            # print(pheno.shape)
-            print(ss_zscores.shape)
             if fileio.test_present(region_id, ss_zscores.name):
                 logging.log(9,"Skipping pheno already present")
                 continue
-            z_vec = self._pheno_to_rpy2(ss_zscores, names)
             logging.log(8, "Calculating susie PIP for pheno {}".format(ss_zscores.name))
-            susie_fit = self._susie_rss_f(z_vec, g_cor)
+            g_cor_mat, z_vec, variants = self._to_rpy2(geno, ss_zscores)
+            # print(pheno.shape)
+            # print(ss_zscores.shape)
+            susie_fit = self._susie_rss_f(z_vec, g_cor_mat)
             susie_pip = self._susie_pip_f(susie_fit)
             # print(susie_pip[:5])
             # print(numpy.asarray(susie_pip)[:5])
-            pips = pandas.DataFrame({'variant_id':names,
+            pips = pandas.DataFrame({'variant_id': variants,
                                        'pip': susie_pip,
-                                       'phenotype': [ss_zscores.name] * ll})
+                                       'phenotype': [ss_zscores.name] * len(variants)})
             fileio.write_region(pips, region_id, ss_zscores.name)
 
 
