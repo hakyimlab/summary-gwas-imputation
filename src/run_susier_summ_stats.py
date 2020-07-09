@@ -20,7 +20,6 @@ class RContext:
     def __init__(self, pheno_dd):
         self.RScript = os.path.join(os.path.dirname(__file__), 'matrixeqtl.R')
         self._init_R()
-        self.p_mat = self._to_rpy2(pheno_dd)
 
     def _init_R(self):
         R = robjects.r
@@ -44,10 +43,13 @@ class RContext:
     def _to_rpy2(self, geno, ss_pheno):
         # dd = deepcopy(geno)
         individuals_arr = geno['individual']
-        geno_variants = set(geno.keys()).remove('individual')
-        ss_variants = set(ss_pheno.index)
-        keep_variants = sorted(list(geno_variants.intersection(ss_variants)))
-
+        geno_variants = set(geno.keys())
+        geno_variants.remove('individual')
+        ss_variants = set(ss_pheno.index.values)
+        keep_variants = geno_variants & ss_variants
+        print(len(keep_variants))
+        keep_variants = sorted(list(keep_variants))
+        print(len(keep_variants))
         geno_np_arr = numpy.array([geno[v] for v in keep_variants])
         dimnames = robjects.ListVector([(1, robjects.StrVector(individuals_arr)),
                                         (2, robjects.StrVector(keep_variants))])
@@ -59,6 +61,9 @@ class RContext:
 
     @staticmethod
     def _pheno_to_rpy2(pheno, variants):
+        print(pheno.shape)
+        print(len(variants))
+        pheno = pheno[~pheno.index.duplicated()]
         p = pheno.reindex(variants)
         return robjects.FloatVector(p.values)
 
@@ -182,7 +187,6 @@ class PythonContext:
 
     def load_region_ss(self, region_name, pheno):
         r_ = self._region_df.loc[region_name]
-        print(r_)
         fname_ = self.ss_format.format(chr = r_.chromosome,
                                        pheno = pheno)
         logging.log(3, "Reading {}".format(fname_))
