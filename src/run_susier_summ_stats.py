@@ -54,19 +54,20 @@ class RContext:
 
     @staticmethod
     def _pheno_to_rpy2(pheno, individuals):
-        p = pheno.reindex(individuals)
+        p = pheno.drop_duplicates().reindex(individuals)
         return robjects.FloatVector(p.values)
 
     def compute_pip(self, geno, ss_generator, fileio, region_id):
         logging.log(5, "Creating R object for genotype")
-        # print("N_individuals: {}, N_varaints: {}".format(len(geno['individual']),
-        #                                                  len(geno) - 1))
+        print("Geno info: N_individuals: {}, N_varaints: {}".format(len(geno['individual']),
+                                                          len(geno) - 1))
         g_mat, individuals, names = self._to_rpy2(geno)
         g_cor = self._cor_f(g_mat)
         ll = len(names)
         pip_df = pandas.DataFrame(columns=['variant_id', 'pip', 'phenotype'])
         for ss_zscores in ss_generator():
             # print(pheno.shape)
+            print(ss_zscores.shape)
             if fileio.test_present(region_id, ss_zscores.name):
                 logging.log(9,"Skipping pheno already present")
                 continue
@@ -110,6 +111,7 @@ class PythonContext:
         self.metadata_pattern = metadata_pattern
         self.ss_dir = ss_dir
         self.ss_format = ss_format
+        logging.log(3, "Set attributes")
         self.whitelist, phenos = self._load_whitelist(whitelist_fp=whitelist_fp,
                                                           n_batches=n_batches,
                                                           batch=batch)
@@ -175,13 +177,15 @@ class PythonContext:
         return [i for i in out_set]
 
     def load_region_ss(self, region_name, pheno):
-        r_ = self._region_df[region_name]
+        r_ = self._region_df.loc[region_name]
+        print(r_)
         fname_ = self.ss_format.format(chr = r_.chromosome,
                                        pheno = pheno)
+        logging.log(3, "Reading {}".format(fname_))
         df = pandas.read_csv(os.path.join(self.ss_dir, fname_), sep="\t",
-                             usecols=['variant_id', 'effect_size', 'standard_error', 'position'])
-        df = df[df['position'] <= r_.end & df['position'] >= r_.start]
-        df = df.set_index('variant_id')
+                             usecols=['panel_variant_id', 'effect_size', 'standard_error', 'position'])
+        df = df.loc[(df['position'] <= r_.stop) & (df['position'] >= r_.start)]
+        df = df.set_index('panel_variant_id')
         df[pheno] = df['effect_size'] / df['standard_error']
         return df[pheno]
 
