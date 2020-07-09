@@ -184,7 +184,7 @@ class PythonContext:
         logging.log(3, "Reading {}".format(fname_))
         df = pandas.read_csv(os.path.join(self.ss_dir, fname_), sep="\t",
                              usecols=['panel_variant_id', 'effect_size', 'standard_error', 'position'])
-        df = df.loc[(df['position'] <= r_.stop) & (df['position'] >= r_.start)]
+        df = df.loc[(df['position'] < r_.stop) & (df['position'] >= r_.start)]
         df = df.set_index('panel_variant_id')
         df[pheno] = df['effect_size'] / df['standard_error']
         return df[pheno]
