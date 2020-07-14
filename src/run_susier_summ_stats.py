@@ -47,9 +47,7 @@ class RContext:
         geno_variants.remove('individual')
         ss_variants = set(ss_pheno.index.values)
         keep_variants = geno_variants & ss_variants
-        print(len(keep_variants))
         keep_variants = sorted(list(keep_variants))
-        print(len(keep_variants))
         geno_np_arr = numpy.array([geno[v] for v in keep_variants])
         dimnames = robjects.ListVector([(1, robjects.StrVector(individuals_arr)),
                                         (2, robjects.StrVector(keep_variants))])
@@ -61,19 +59,18 @@ class RContext:
 
     @staticmethod
     def _pheno_to_rpy2(pheno, variants):
-        print(pheno.shape)
-        print(len(variants))
         pheno = pheno[~pheno.index.duplicated()]
         p = pheno.reindex(variants)
         return robjects.FloatVector(p.values)
 
     def compute_pip(self, geno, ss_generator, fileio, region_id):
         logging.log(5, "Creating R object for genotype")
-        print("Geno info: N_individuals: {}, N_varaints: {}".format(len(geno['individual']),
-                                                          len(geno) - 1))
+        # print("Geno info: N_individuals: {}, N_varaints: {}".format(len(geno['individual']),
+        #                                                  len(geno) - 1))
         # g_mat, individuals, names = self._to_rpy2(geno)
         # g_cor = self._cor_f(g_mat)
         # ll = len(names)
+        logging.log(8, "Working on region {}".format(region_id))
         for ss_zscores in ss_generator():
             if fileio.test_present(region_id, ss_zscores.name):
                 logging.log(9,"Skipping pheno already present")
