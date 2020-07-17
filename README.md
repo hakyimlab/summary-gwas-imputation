@@ -1,7 +1,7 @@
 
 This repository contains tools to harmonize GWAS summary statistics to a given reference.
 The main application is harmonization of a public gwas' variants to those in the GTEx study,
-and allow imputation of summary satistics for missing variants.
+and allow imputation of summary statistics for missing variants.
 
 You can also find tools to run colocalization (COLOC or Enloc) on them.
 
