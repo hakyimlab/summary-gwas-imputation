@@ -82,16 +82,16 @@ def annotate_gwas(region_df, gwas_df):
         gwas_df.loc[(gwas_df['chromosome']==r_.chromosome )&
                     (gwas_df['position'] >= r_.start) &
                     (gwas_df['position'] < r_.stop), 'region_id'] = r_.region_id
-
     return gwas_df
 
 
-def canonical_variant_id(gwas_df, chr=None, chromosome="chromosome",
+def panel_variant_id(gwas_df, chr=None, chromosome="chromosome",
                          position="position", effect_allele="effect_allele",
-                         non_effect_allele="non_effect_allele"):
+                         non_effect_allele="non_effect_allele",
+                         variant_id_column='variant_id'):
     if chr is None:
         chr = gwas_df.iloc[0][chromosome]
-    gwas_df['variant_id'] = ('chr' + str(chr) +  "_" +
+    gwas_df[variant_id_column] = ('chr' + str(chr) +  "_" +
                             gwas_df[position].astype(str) + "_" +
                              gwas_df[non_effect_allele] + "_" +
                              gwas_df[effect_allele])

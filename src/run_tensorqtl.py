@@ -5,6 +5,7 @@ import sys
 
 from genomic_tools_lib import Logging, Utilities
 from genomic_tools_lib.file_formats import Parquet
+from genomic_tools_lib.file_formats.gwas import Utilities as GWASUtilities
 
 from genomic_tools_lib.external_tools.tensorqtl import genotypeio, trans
 from pyarrow import parquet as pq
@@ -60,6 +61,7 @@ class FileOut:
         # df.loc[df.chromosome.isna()] = self._merge_bim(df.loc[df.chromosome.isna()], bim_fp)
         df = self._merge_bim(df, bim_fp)
         df = df.astype(dtype={'chromosome': int, 'position': int})
+        df = GWASUtilities.panel_variant_id(df, variant_id_column='panel_variant_id')
         df = df.fillna('NA')
         return self._fill_empty_gwas_cols(df)
 
