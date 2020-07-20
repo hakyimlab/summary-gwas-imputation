@@ -253,7 +253,7 @@ def panel_variant_id(d, colname):
     for i in cols:
         if i not in d:
             raise ValueError("To create variant ID need column: {}".format(i))
-    if not d.chromosome.iloc[0].astype(str).startswith('chr'):
+    if not str(d.chromosome.iloc[0]).startswith('chr'):
         chr_column = ["chr{}".format(x) for x in d.chromosome]
     else:
         chr_column = d.chromosome
@@ -300,8 +300,8 @@ def run(args):
                 d= d.assign(**{c:numpy.nan})
         d = d[order]
 
-    if args.panel_variant_id is not None:
-        d = panel_variant_id(d, args.panel_variant_id)
+    if args.construct_panel_variant_id is not None:
+        d = panel_variant_id(d, args.construct_panel_variant_id)
 
     d = clean_up(d)
 
