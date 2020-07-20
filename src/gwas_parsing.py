@@ -240,9 +240,26 @@ def fill_from_metadata(args, d):
     return d
 
 def clean_up(d):
-    d = d.assign(sample_size=[int(x) if not math.isnan(x) else "NA" for x in d.sample_size])
+    if "sample_size" in d:
+        d = d.assign(sample_size=[int(x) if not math.isnan(x) else "NA" for x in d.sample_size])
     if "chromosome" in d.columns.values and "position" in d.columns.values:
         d = Genomics.sort(d)
+    return d
+
+
+def panel_variant_id(d, colname):
+    logging.info("Constructing panel variant ID")
+    cols = ['chromosome', 'position', 'effect_allele', 'non_effect_allele']
+    for i in cols:
+        if i not in d:
+            raise ValueError("To create variant ID need column: {}".format(i))
+    if not d.chromosome.iloc[0].astype(str).startswith('chr'):
+        chr_column = ["chr{}".format(x) for x in d.chromosome]
+    else:
+        chr_column = d.chromosome
+    d[colname] = (chr_column + '_'
+                       + d['position'].astype(str) + "_"
+                       + d['non_effect_allele'] + "_" + d['effect_allele'])
     return d
 
 def run(args):
@@ -253,9 +270,12 @@ def run(args):
     start = timer()
     logging.info("Parsing input GWAS")
     d = GWAS.load_gwas(args.gwas_file, args.output_column_map,
-            force_special_handling=args.force_special_handling, skip_until_header=args.skip_until_header,
-            separator=args.separator, handle_empty_columns=args.handle_empty_columns, input_pvalue_fix=args.input_pvalue_fix,
-            enforce_numeric_columns=args.enforce_numeric_columns)
+                       force_special_handling=args.force_special_handling,
+                       skip_until_header=args.skip_until_header,
+                       separator=args.separator,
+                       handle_empty_columns=args.handle_empty_columns,
+                       input_pvalue_fix=args.input_pvalue_fix,
+                       enforce_numeric_columns=args.enforce_numeric_columns)
     logging.info("loaded %d variants", d.shape[0])
 
     d = pre_process_gwas(args, d)
@@ -280,6 +300,9 @@ def run(args):
                 d= d.assign(**{c:numpy.nan})
         d = d[order]
 
+    if args.panel_variant_id is not None:
+        d = panel_variant_id(d, args.panel_variant_id)
+
     d = clean_up(d)
 
     logging.info("Saving...")
@@ -302,6 +325,8 @@ if __name__ == "__main__":
     parser.add_argument("-output_order", help="Specify output order", nargs='+')
     parser.add_argument("-output", help="Where the output should go")
     parser.add_argument("--keep_all_original_entries", action="store_true")
+    parser.add_argument("--construct_panel_variant_id", nargs='?', const='panel_variant_id',
+                        help="Specify if chr{chr}_{pos}_{ref}_{alt} variant IDs should be constructed")
     parser.add_argument("-verbosity", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
     GWASUtilities.add_gwas_arguments_to_parser(parser)
     args = parser.parse_args()

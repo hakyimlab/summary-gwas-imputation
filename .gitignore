@@ -36,3 +36,5 @@ __pycache__
 *.log
 
 __exp
+
+.idea/
