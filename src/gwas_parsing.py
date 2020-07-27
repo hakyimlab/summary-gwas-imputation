@@ -78,6 +78,25 @@ def fill_coords(args, d):
     logging.info("%d variants after filling coordinates", d.shape[0])
     return d
 
+# def _lift(l, chromosome, position):
+#     # NA is important, instead of None or NaN, so that integer positions are not converted to floats by pandas. Yuck!
+#     _new_chromosome = "NA"
+#     _new_position = "NA"
+#     # try:
+#     p = int(position)
+#     l_ = l.convert_coordinate(chromosome, p)
+#     # if l_ is None:
+#     #     raise ValueError("Chromosome {} and position {}".format(chromosome, position))
+#     if l_:
+#         if len(l_) > 1:
+#             logging.warning("Liftover with more than one candidate: %s", t.variant_id)
+#         _new_chromosome = l_[0][0]
+#         _new_position = int(l_[0][1])
+#     # except:
+#     #     logging.warning("Reached exception with liftover")
+#     return _new_chromosome, _new_position
+
+
 def _lift(l, chromosome, position):
     # NA is important, instead of None or NaN, so that integer positions are not converted to floats by pandas. Yuck!
     _new_chromosome = "NA"
@@ -85,8 +104,6 @@ def _lift(l, chromosome, position):
     try:
         p = int(position)
         l_ = l.convert_coordinate(chromosome, p)
-        if l_ is None:
-            raise ValueError("Chromosome {} and position {}".format(chromosome, position))
         if l_:
             if len(l_) > 1:
                 logging.warning("Liftover with more than one candidate: %s", t.variant_id)
@@ -95,7 +112,6 @@ def _lift(l, chromosome, position):
     except:
         pass
     return _new_chromosome, _new_position
-
 def liftover(args, d):
     logging.info("Performing liftover")
     l = pyliftover.LiftOver(args.liftover)

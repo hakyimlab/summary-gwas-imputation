@@ -167,7 +167,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    Logging.configure_logging(level=args.parsimony, with_date=True)
+    Logging.configure_logging(level=args.parsimony, with_date=True, target=sys.stdout)
 
 
     run(args)

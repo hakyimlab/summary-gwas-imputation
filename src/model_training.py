@@ -77,7 +77,8 @@ def get_weights(x_weights, id_whitelist):
 
 def get_dapg_preparsed(weights):
     df = Miscellaneous.dapg_preparsed(weights)
-    df.w = 1 - df.w
+    if 'w' in df:
+        df.w = 1 - df.w
     return df
 
 ###############################################################################
@@ -332,8 +333,9 @@ def run(args):
 
     if args.preparsed_features:
         logging.info("Loading preparsed features")
-        features = get_dapg_preparsed(args.preparsed_features)
-        d_handler.add_features_preparsed(features)
+        features = get_dapg_preparsed(args.preparsed_features[0])
+        d_handler.add_features_preparsed(features,
+                                         snp_column=args.preparsed_features[1])
 
     f_handler = Parquet.MultiFileGenoHandler(args.features,
                                              args.features_annotation)
@@ -445,7 +447,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", default="elastic_net", help="'elastic_net' or 'ols'")
     parser.add_argument("--gene_whitelist", nargs="+", default=None)
     parser.add_argument("--preparsed_weights", help="Pre-parsed dapg weights")
-    parser.add_argument("--preparsed_features", help="Pre-parsed features (not weights)")
+    parser.add_argument("--preparsed_features", help="Pre-parsed features (not weights) and snp column name", nargs=2)
     parser.add_argument("--dont_prune", action="store_true")
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
@@ -453,7 +455,7 @@ if __name__ == "__main__":
     parser.add_argument("--nested_cv_folds", default=5, type=int)
     parser.add_argument("--alpha", default=0.5, type=float)
     args = parser.parse_args()
-    Logging.configure_logging(args.parsimony)
+    Logging.configure_logging(args.parsimony, target=sys.stdout)
 
     initialize()
 

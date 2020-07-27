@@ -470,17 +470,18 @@ class PhenoDataHandler:
         self.send_weights = True
         self._merge_metadata_features()
 
-    def add_features_preparsed(self, features, pheno_col='gene_id'):
+    def add_features_preparsed(self, features, snp_column = 'variant_id', pheno_col='gene'):
         """
 
         :param features: pandas DataFrame
         :param pheno_col: str. Name of col with phenotype data
         :return:
         """
-        features = features.rename(mapper={'variant_id': 'id', pheno_col: 'gene_id'}, axis=1)
-
+        features = features.rename(mapper={snp_column: 'id', pheno_col: 'gene_id'}, axis=1)
         # Only keep the intersection of genes from weights, genes from data
         ids_from_weights = set(features.gene_id)
+        logging.log(9, "Phenos from preparsed featuers: {}".format(len(ids_from_weights)))
+
         ids_from_data = set(self.data_annotation.gene_id)
         gene_ids = ids_from_weights.intersection(ids_from_data)
         weights = features.loc[features.gene_id.isin(gene_ids)]
@@ -499,7 +500,10 @@ class PhenoDataHandler:
             f_p = self._features_preparsed.set_index('id')
             m = self._features_metadata.set_index('id')
             cols = list(m.columns)
-            cols.extend(['w', 'gene_id'])
+            if self.send_weights:
+                cols.extend(['w', 'gene_id'])
+            else:
+                cols.extend(['gene_id'])
             f_p = f_p.join(m, how='left', rsuffix='_m')[cols]
             f_p['id'] = f_p.index
             self._features_preparsed = f_p.groupby('gene_id')

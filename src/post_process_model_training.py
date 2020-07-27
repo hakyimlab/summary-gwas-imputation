@@ -32,6 +32,7 @@ def _read_2(input_prefix, stem, check=False):
 def run(args):
     logging.info("Loading model summaries")
     extra = _read_2(args.input_prefix, "_summary.txt.gz")
+    logging.log(7, "Found {} model summaries".format(extra.shape[0]))
     extra = extra[extra["n.snps.in.model"] > 0]
     if not args.skip_check:
         if "rho_avg" in extra:
@@ -44,6 +45,7 @@ def run(args):
 
         if "nested_cv_converged" in extra:
             extra.nested_cv_converged = extra.nested_cv_converged.astype(numpy.int32)
+    logging.log(7, "After checks, {} summaries remaining".format(extra.shape[0]))
 
     logging.info("Loading weights")
     weights = _read_2(args.input_prefix, "_weights.txt.gz")
