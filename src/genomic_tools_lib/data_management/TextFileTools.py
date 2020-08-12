@@ -43,7 +43,7 @@ def load_column(path, column, unique_entries=True, white_list=None):
         l(v)
     return r
 
-def load_dataframe(path, spec=None, order=None, force_special_handling=False, skip_until_header=None, keys=None, key_column_name=None, separator=None, handle_empty_columns=False, additional_filter=None, columns=None):
+def load_dataframe(path, spec=None, order=None, force_special_handling=False, skip_until_header=None, keys=None, key_column_name=None, separator=None, handle_empty_columns=False, additional_filter=None, columns=None, no_column_names=False):
     #TODO: think of this bash-python command line kink
     if separator == "ANY_WHITESPACE":
         separator = "\s+"
@@ -53,9 +53,13 @@ def load_dataframe(path, spec=None, order=None, force_special_handling=False, sk
                 skip_until_header=skip_until_header, separator=separator, handle_empty_columns=handle_empty_columns, additional_filter=additional_filter,
                 columns=columns)
     else:
-        if separator is None: separator = "\t"
-        d = pandas.read_table(path, sep=separator, usecols=columns)
-
+        if separator is None:
+            separator = "\t"
+        if no_column_names:
+            d = pandas.read_table(path, sep=separator, usecols=columns, header=None)
+        else:
+            d = pandas.read_table(path, sep=separator, usecols=columns)
+    print(d.head())
     if spec:
         spec, order = parse_spec(spec, order)
         d = d.rename(columns=spec)

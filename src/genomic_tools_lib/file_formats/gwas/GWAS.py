@@ -11,10 +11,18 @@ from ...Constants import EFFECT_ALLELE, NON_EFFECT_ALLELE, ZSCORE, \
 from ...data_management import TextFileTools
 
 
-def load_gwas(path, spec, order=None, force_special_handling=False, skip_until_header=None, separator=None, handle_empty_columns=False, input_pvalue_fix=None, enforce_numeric_columns=None):
+def load_gwas(path, spec, order=None, force_special_handling=False,
+              skip_until_header=None, separator=None,
+              handle_empty_columns=False, input_pvalue_fix=None,
+              enforce_numeric_columns=None, no_column_names=False):
     #TODO: use snp id as key, etc
-    d = TextFileTools.load_dataframe(path, spec, order=order,
-        force_special_handling=force_special_handling, skip_until_header=skip_until_header, separator=separator, handle_empty_columns=handle_empty_columns)
+    d = TextFileTools.load_dataframe(path, spec,
+                                     order=order,
+                                     force_special_handling=force_special_handling,
+                                     skip_until_header=skip_until_header,
+                                     separator=separator,
+                                     handle_empty_columns=handle_empty_columns,
+                                     no_column_names=no_column_names)
     d = _ensure_columns(d, input_pvalue_fix, enforce_numeric_columns)
     return d
 
@@ -28,6 +36,8 @@ def _ensure_columns(d, input_pvalue_fix=1e-50, enforce_numeric_columns=None):
     if not EFFECT_ALLELE in d or not NON_EFFECT_ALLELE in d:
         logging.warning("No allele columns in GWAS! I hope you know what you are doing.")
     else:
+        logging.log(2, "First entry of effect_allele: {}".format(d[EFFECT_ALLELE].iloc[0]))
+        logging.log(2, "First entry of non_effect_allele: {}".format(d[NON_EFFECT_ALLELE].iloc[0]))
         d[EFFECT_ALLELE] = d[EFFECT_ALLELE].str.upper()
         d[NON_EFFECT_ALLELE] = d[NON_EFFECT_ALLELE].str.upper()
 

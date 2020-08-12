@@ -161,8 +161,8 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
             ids.append(v)
     data = pandas.DataFrame(data)
 
-    if prune:
-        data = prune(data)
+    # if prune:
+    #     data = prune(data)
     ids = data.columns.values
     if len(ids) == 0:
         w = pandas.DataFrame({"feature":[], "weight":[]})

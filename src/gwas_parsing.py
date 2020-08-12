@@ -290,7 +290,7 @@ def run(args):
     d = GWAS.load_gwas(args.gwas_file, args.output_column_map,
             force_special_handling=args.force_special_handling, skip_until_header=args.skip_until_header,
             separator=args.separator, handle_empty_columns=args.handle_empty_columns, input_pvalue_fix=args.input_pvalue_fix,
-            enforce_numeric_columns=args.enforce_numeric_columns)
+            enforce_numeric_columns=args.enforce_numeric_columns, no_column_names=args.no_column_names)
     logging.info("loaded %d variants", d.shape[0])
 
     d = pre_process_gwas(args, d)
@@ -342,6 +342,8 @@ if __name__ == "__main__":
     parser.add_argument("-output", help="Where the output should go")
     parser.add_argument("--keep_all_original_entries", action="store_true")
     parser.add_argument("--canonical_variant_id", action='store_true')
+    parser.add_argument("--no_column_names", action='store_true', default=False)
+    parser.add_argument("--separator")
     parser.add_argument("-verbosity", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
     GWASUtilities.add_gwas_arguments_to_parser(parser)
     args = parser.parse_args()
