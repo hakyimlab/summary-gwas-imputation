@@ -449,7 +449,7 @@ class PhenoDataHandler:
         self._features_metadata = metadata
         self._merge_metadata_features()
 
-    def add_features_weights(self, weights, pheno_col='gene_id'):
+    def add_features_weights(self, weights, pheno_col='gene'):
         """
         :param weights: pandas DataFrame
         :param pheno_col: str. Name of col with phenotype data

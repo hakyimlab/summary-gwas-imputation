@@ -84,27 +84,35 @@ def get_dapg_preparsed(weights):
 ###############################################################################
 
 def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_,
-                              x_w=None, prune=True, nested_folds=10, alpha=0.5):
+                              x_w=None, prune=True, n_train_test_folds=5, n_k_folds=10, alpha=0.5):
     x = numpy.array([features_data_[v] for v in features_.id.values])
     dimnames = robjects.ListVector(
         [(1, robjects.StrVector(d_["individual"])), (2, robjects.StrVector(features_.id.values))])
     x = robjects.r["matrix"](robjects.FloatVector(x.flatten()), ncol=features_.shape[0], dimnames=dimnames)
     y = robjects.FloatVector(d_[data_annotation_.gene_id])
-    nested_folds = robjects.FloatVector([nested_folds])
+    n_train_test_folds = robjects.FloatVector([n_train_test_folds])
+    n_k_folds = robjects.FloatVector([n_k_folds])
     #py2ri chokes on None.
     if x_w is None:
-        res = train_elastic_net(y, x, n_train_test_folds=nested_folds,
+        res = train_elastic_net(y,
+                                x,
+                                n_train_test_folds=n_train_test_folds,
+                                n_k_folds=n_k_folds,
                                 alpha=alpha)
     else:
         # observation weights, not explanatory variable weight :( , x_weight = x_w)
-        res = train_elastic_net(y, x, penalty_factor=x_w,
-                                n_train_test_folds=nested_folds, alpha=alpha)
+        res = train_elastic_net(y,
+                                x,
+                                penalty_factor=x_w,
+                                n_train_test_folds=n_train_test_folds,
+                                n_k_folds=n_k_folds,
+                                alpha=alpha)
     return _r_to_pandas(res[0]), _r_to_pandas(res[1])
 
 ###############################################################################
 
-def ols_pred_perf(data, n_folds=10):
-    kf = KFold(n_splits=n_folds, shuffle=True)
+def ols_pred_perf(data, n_train_test_folds=5):
+    kf = KFold(n_splits=n_train_test_folds, shuffle=True)
 
     rho_f=[]
     R2_f=[]
@@ -127,7 +135,7 @@ def ols_pred_perf(data, n_folds=10):
         zscore_f.append(zscore)
 
     rho_avg = numpy.average(rho_f)
-    zscore_est = numpy.sum(zscore_f)/numpy.sqrt(n_folds)
+    zscore_est = numpy.sum(zscore_f)/numpy.sqrt(n_train_test_folds)
     zscore_pval = scipy.stats.norm.sf(zscore_est)
     d = {"test_R2_avg": [numpy.average(R2_f)], "test_R2_sd": [numpy.std(R2_f)],
          "rho_avg": [rho_avg], "rho_avg_squared": [rho_avg**2], "rho_se":[numpy.std(rho_f)],
@@ -151,7 +159,7 @@ def prune(data):
     return data.drop(discard, axis=1)
 
 
-def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, nested_folds=10, alpha=0.5):
+def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, n_k_folds=10, alpha=0.5, n_train_test_folds=5):
     ids=[]
     data = {}
     for v in features_.id.values:
@@ -176,7 +184,7 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
     results = smf.ols('y ~ {}'.format(" + ".join(ids)), data=data).fit()
     weights = results.params[1:].to_frame().reset_index().rename(columns={"index": "feature", 0: "weight"})
-    summary = ols_pred_perf(data, nested_folds)
+    summary = ols_pred_perf(data, n_train_test_folds=n_train_test_folds)
     summary = summary.assign(alpha=None, n_snps_in_window=features_.shape[0],
                            cv_R2_avg=None, cv_R2_sd=None, in_sample_R2=None)
     summary["n.snps.in.model"] = len(ids)
@@ -187,7 +195,7 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
 def process(w, s, c, data_handler, data_annotation_, features_handler,
              weights, summary_fields, train, postfix=None,
-            nested_folds=10, alpha=0.5):
+            n_k_folds=10, n_train_test_folds=5, alpha=0.5):
     """
 
     :param w: weights file handle
@@ -232,8 +240,15 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
     features_data_, features_ = features_handler.load_features(features_, [x for x in d_['individual']])
 
     logging.log(8, "training")
-    weights, summary = train(features_data_, features_, d_, data_annotation_,
-                             x_w, not args.dont_prune, nested_folds, alpha)
+    weights, summary = train(features_data_=features_data_,
+                             features_=features_,
+                             d_=d_,
+                             data_annotation_=data_annotation_,
+                             x_w=x_w,
+                             prune=not args.dont_prune,
+                             n_train_test_folds=n_train_test_folds,
+                             n_k_folds=n_k_folds,
+                             alpha=alpha)
 
     if weights.shape[0] == 0:
         logging.log(9, "no weights, skipping")
@@ -352,7 +367,9 @@ def run(args):
                         process(w, s, c, d_handler, data_annotation_,
                                 f_handler, d_handler.send_weights,
                                 SUMMARY_FIELDS, train,
-                                nested_folds=args.nested_cv_folds, alpha=args.alpha)
+                                n_train_test_folds=args.n_train_test_folds,
+                                n_k_folds=args.n_k_folds,
+                                alpha=args.alpha)
 
     logging.info("Finished")
 
@@ -381,7 +398,8 @@ if __name__ == "__main__":
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
     parser.add_argument("--repeat", default=None, type=int)
-    parser.add_argument("--nested_cv_folds", default=5, type=int)
+    parser.add_argument("--n_train_test_folds", default=5, type=int)
+    parser.add_argument("--n_k_folds", default=10, type=int)
     parser.add_argument("--alpha", default=0.5, type=float)
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony, target=sys.stdout)

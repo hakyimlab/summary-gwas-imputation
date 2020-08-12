@@ -32,6 +32,18 @@ nested_cv_elastic_net_perf <- function(x, y, n_samples, n_train_test_folds, n_k_
   # The mean and standard deviation of R^2 over all folds is then reported, and the p-values
   # are combined using Fisher's method.
   #   message(n_train_test_folds)
+  if (any(n_train_test_folds == 1, n_k_folds == 1)){
+    message("Skipping performance measures due to single fold")
+    return(list(R2_avg=NA,
+                R2_sd=NA,
+                pval_est=NA,
+                rho_avg=NA,
+                rho_se=NA,
+                rho_zscore=NA,
+                rho_avg_squared=NA,
+                zscore_pval=NA,
+                converged=NA))
+  }
   R2_folds <- rep(0, n_train_test_folds)
   corr_folds <- rep(0, n_train_test_folds)
   zscore_folds <- rep(0, n_train_test_folds)
@@ -118,6 +130,10 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
     if (is.null(penalty_factor)) {
         penalty_factor = rep(1, ncol(x))
     }
+    if (ncol(x) == 1){
+      message("Single feature input to glmnet. Adding column of zeros.")
+      x <- cbind(x, rep(0, nrow(x)))
+    }
 
     perf_measures <- nested_cv_elastic_net_perf(x, y,
                                                 length(y),
@@ -178,7 +194,6 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
         cv_pval_est <- pchisq(-2 * sum(log(cv_pval_folds)), 2*n_k_folds, lower.tail = F)
 
         if (fit$nzero[best_lam_ind] > 0) {
-
           weights <- fit$glmnet.fit$beta[which(fit$glmnet.fit$beta[,best_lam_ind] != 0), best_lam_ind]
           weights_n <- names(fit$glmnet.fit$beta[,best_lam_ind])[which(fit$glmnet.fit$beta[,best_lam_ind] != 0)]
           #weighted_f <- names(fit$glmnet.fit$beta[,best_lam_ind])[which(fit$glmnet.fit$beta[,best_lam_ind] != 0)]
@@ -189,6 +204,7 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
                             cv_rho_avg=cv_rho_avg, cv_rho_se=cv_rho_se, cv_rho_avg_squared=cv_rho_avg_squared, cv_zscore_est=cv_zscore_est, cv_zscore_pval=cv_zscore_pval, cv_pval_est=cv_pval_est,
                             cv_converged=cv_converged)
         } else {
+          # message("No weights condition 1")
           w <-  data.frame(weight = numeric(0), feature=character(0), stringsAsFactors=FALSE)
           model_summary <- data.frame(alpha=alpha, n_features=ncol(x), n_features_in_model=0, lambda_min_mse=fit$lambda[best_lam_ind],
                             test_R2_avg=R2_avg, test_R2_sd=R2_sd, cv_R2_avg=cv_R2_avg, cv_R2_sd=cv_R2_sd, in_sample_R2=training_R2,
@@ -197,6 +213,7 @@ train_elastic_net <- function(y, x, n_train_test_folds=5, n_k_folds=10, alpha=0.
                             cv_converged=cv_converged)
         }
       } else {
+        # message("No weights condition 0")
         w <-  data.frame(weight = numeric(0), feature=character(0), stringsAsFactors=FALSE)
         model_summary <- list(alpha=alpha, n_features=col(x), n_features_in_model=0,lambda_min_mse=NA,
                         test_R2=R2_avg, test_R2_sd=R2_sd, cv_R2_avg=NA, cv_R2_sd=NA, in_sample_R2=NA,
