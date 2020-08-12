@@ -206,14 +206,16 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
     """
     if alpha is None:
         alpha = 0.5
+    # Postfix gene ID if necessary
     gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
+
+    # Load phenotype
     logging.log(8, "Loading phenotype data")
     d_ = data_handler.load_pheno(data_annotation_.gene_id)
-    # d_ = Parquet._read(data, [data_annotation_.gene_id])
 
+    # Load features: pandas DF with columns 'id', 'chromosome'
     features_ = data_handler.get_features(data_annotation_.gene_id)
 
-    # features_ = Genomics.entries_for_gene_annotation(data_annotationn_, args.window, features_metadata)
     if weights:
         logging.log(5, "Sending weights")
         x_w = robjects.FloatVector(features_.w.values)
@@ -224,16 +226,11 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
     if features_.shape[0] == 0:
         logging.log(9, "No features available")
         return
+
+    # Load available SNPs from genotype data;
     logging.log(8, "Loading genotype data")
-
     features_data_, features_ = features_handler.load_features(features_, [x for x in d_['individual']])
-    # features_data_ = Parquet._read(features, [x for x in features_.id.values],
-    #                                specific_individuals=[x for x in d_["individual"]])
 
-#    assert features_.shape[0] == len(features_data_), "Features {}, data {}".format(features_.shape[0], len(features_data_))
-#    loaded_features = [v for v in features_data_.keys()]
-#    loaded_features.remove('individual')
-#    features_ = features_.
     logging.log(8, "training")
     weights, summary = train(features_data_, features_, d_, data_annotation_,
                              x_w, not args.dont_prune, nested_folds, alpha)
@@ -271,28 +268,6 @@ def process(w, s, c, data_handler, data_annotation_, features_handler,
         l = "{} {} {} {}\n".format(cov_[0], cov_[1], cov_[2], cov_[3]).encode()
         c.write(l)
 
-########################################################################################################################
-
-
-    # @staticmethod
-    # def _get_dapg_weights(x_weights, id_whitelist=None, pre_parsed=False):
-    #     if pre_parsed:
-    #         weights_df_lst = []
-    #         for i in x_weights:
-    #             weights_df_lst.append(Miscellaneous.dapg_preparsed(i))
-    #         df = pandas.concat(weights_df_lst)
-    #         df.w = 1 - df.w
-    #         return df
-    #     else:
-    #         if id_whitelist is None:
-    #             raise ValueError("Either id_whitelist or pre_parsed must be specified")
-    #         if x_weights[1] == "PIP":
-    #             w = Miscellaneous.dapg_signals(x_weights[0], float(x_weights[2]), id_whitelist)
-    #             w = w.rename(columns={"gene": "gene_id", "pip": "w", "variant_id": "id"})
-    #             w.w = 1 - w.w  # Less penalty to the more probable snps
-    #         else:
-    #             raise RuntimeError("unsupported weights argument")
-    #         return w
 
 
 
@@ -313,24 +288,23 @@ def run(args):
 
 
     logging.info("Opening pheno data")
-    d_handler = Parquet.PhenoDataHandler(args.data, sub_batches=args.sub_batches,
+    d_handler = Parquet.PhenoDataHandler(args.data,
+                                         sub_batches=args.sub_batches,
                                          sub_batch=args.sub_batch)
-    # data = pq.ParquetFile(args.data)
-    # available_data = {x for x in data.metadata.schema.names}
 
+    # Load dapg raw output
     if args.features_weights:
         logging.info("Loading weights")
         weights = get_weights(args.features_weights, None)
         d_handler.add_features_weights(weights)
 
-
+    # Load preparsed finemapping output, and assign weights
     if args.preparsed_weights:
         logging.info("Loading preparsed weights")
         weights = get_dapg_preparsed(args.preparsed_weights)
         d_handler.add_features_weights(weights)
-        # x_weights = get_weights(args.features_weights, pre_parsed=True)
-        # whitelist = { v for v in x_weights.variant_id}
 
+    # Load preparsed finemapping output, do not assign weights
     if args.preparsed_features:
         logging.info("Loading preparsed features")
         features = get_dapg_preparsed(args.preparsed_features[0])
@@ -342,51 +316,6 @@ def run(args):
     logging.info("Loading geno metadata")
     features_metadata = f_handler.load_metadata()
     d_handler.add_features_metadata(features_metadata)
-
-
-    # TODO: Re-integrate data_annotation
-    # if args.data_annotation:
-    #     logging.info("Loading data annotation")
-    #     data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch)
-    #     data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
-    #     if args.gene_whitelist:
-    #         logging.info("Applying gene whitelist")
-    #         data_annotation = data_annotation[data_annotation.gene_id.isin(set(args.gene_whitelist))]
-    #     logging.info("Kept %i entries", data_annotation.shape[0])
-    # else:
-    #     data_annotation = None
-
-    # logging.info("Opening features annotation")
-    # if not args.chromosome:
-    #     features_metadata = pq.read_table(args.features_annotation).to_pandas()
-    # else:
-    #     features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
-
-    # if args.chromosome and args.sub_batches and data_annotation:
-    #     logging.info("Trimming variants")
-    #     features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
-
-
-    # if args.rsid_whitelist:
-    #     logging.info("Filtering features annotation")
-    #     whitelist = TextFileTools.load_list(args.rsid_whitelist)
-    #     whitelist = set(whitelist)
-    #     features_metadata = features_metadata[features_metadata.rsid.isin(whitelist)]
-
-
-    # else:
-    #     x_weights = None
-
-    # if data_annotation is None:
-    #     d_ = pq.ParquetFile(args.data)
-    #     gene_lst = d_.metadata.schema.names
-    #     gene_lst.remove('individual')
-    #     dd = {'gene_name': gene_lst, 'gene_id': gene_lst,
-    #           'gene_type': ['NA'] * len(gene_lst)}
-    #     data_annotation = pandas.DataFrame(dd)
-
-#    logging.info("Opening features")
-#    features = pq.ParquetFile(args.features)
 
     logging.info("Setting R seed")
     s = numpy.random.randint(1e8)
