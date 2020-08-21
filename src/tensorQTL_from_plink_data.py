@@ -13,7 +13,8 @@ def run(args):
 
     # Load phenotypes
     logging.info("Loading phenotypes")
-    phenotype_df, phenotype_position_df = tensorqtl.read_phenotype_bed(args.plink_phenotype)
+    phenotype_df = pandas.read_table(args.plink_phenotype, index_col='IID')
+    phenotype_df = phenotype_df.drop('FID', axis=1).T
     phenotype_df = phenotype_df.loc[args.idp]
 
     print(phenotype_df.shape)
