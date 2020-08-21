@@ -9,13 +9,30 @@ from genomic_tools_lib.external_tools import tensorqtl
 # Following the tensorqtl example as closely as possible:
 # https://github.com/broadinstitute/tensorqtl/blob/master/example/tensorqtl_examples.ipynb
 
+def _load_fam_ids(plink_pre):
+    fp = plink_pre + '.fam'
+    df = pandas.read_csv(fp,
+                         sep='\s',
+                         header=None,
+                         names=['FID', 'IID', 'PID', 'MID', 'SEX', 'PHENO'],
+                         engine='python')
+
+    return set(df.IID.astype(str).values)
+
+
 def run(args):
 
     # Load phenotypes
     logging.info("Loading phenotypes")
     phenotype_df = pandas.read_table(args.plink_phenotype, index_col='IID')
     phenotype_df = phenotype_df.drop('FID', axis=1).T
-    phenotype_df = phenotype_df.loc[args.idp]
+
+    # Get intersection of pheno and geno IDs
+    pheno_ids = set(phenotype_df.index.astype(str).values)
+    geno_ids = _load_fam_ids(args.plink_geno_prefix)
+    intersection_ids = list(pheno_ids.intersection(geno_ids))
+
+    phenotype_df = phenotype_df.loc[args.idp, intersection_ids]
 
     print(phenotype_df.shape)
     print(phenotype_df.head())
