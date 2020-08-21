@@ -14,6 +14,10 @@ def run(args):
     # Load phenotypes
     logging.info("Loading phenotypes")
     phenotype_df, phenotype_position_df = tensorqtl.read_phenotype_bed(args.plink_phenotype)
+    phenotype_df = phenotype_df.loc[args.idp]
+
+    print(phenotype_df.shape)
+    print(phenotype_df.head())
 
     # Load genotypes
     logging.info("Loading genotypes")
@@ -45,6 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('-plink_phenotype')
     parser.add_argument('-plink_geno_prefix')
     parser.add_argument('-out_fp')
+    parser.add_argument('-idp', action='append')
 
     args = parser.parse_args()
 
