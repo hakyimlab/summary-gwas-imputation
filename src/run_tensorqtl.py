@@ -70,6 +70,9 @@ class FileOut:
                          'position',
                          'effect_allele',
                          'non_effect_allele']
+        for i in bim_info_cols:
+            if i not in df:
+                df[i] = [pandas.__numpy.nan] * df.shape[0]
         bim_df = pandas.read_csv(fp,
                          sep="\s",
                          engine='python',
