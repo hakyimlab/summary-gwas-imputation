@@ -24,11 +24,12 @@ def run(args):
 
     # Load phenotypes
     logging.info("Loading phenotypes")
-    phenotype_df = pandas.read_table(args.plink_phenotype, index_col='IID')
-    phenotype_df = phenotype_df.drop('FID', axis=1).T
+    phenotype_df = pandas.read_table(args.plink_phenotype)
+    phenotype_df['IID'] = phenotype_df['IID'].astype(str)
+    phenotype_df = phenotype_df.set_index('IID').drop('FID', axis=1).T
 
     # Get intersection of pheno and geno IDs
-    pheno_ids = set(phenotype_df.index.astype(str).values)
+    pheno_ids = set(phenotype_df.columns.values)
     geno_ids = _load_fam_ids(args.plink_geno_prefix)
     intersection_ids = list(pheno_ids.intersection(geno_ids))
 
@@ -41,6 +42,7 @@ def run(args):
     logging.info("Loading genotypes")
     pr = genotypeio.PlinkReader(args.plink_geno_prefix)
     genotype_df = pr.load_genotypes()
+    genotype_df.columns = [str(i) for i in genotype_df.columns]
 
     # Make a fake covariates dataframe
     # TensorQTL requires a covariates dataframe, but an empty one works
