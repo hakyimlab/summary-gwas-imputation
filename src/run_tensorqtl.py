@@ -10,6 +10,7 @@ from genomic_tools_lib.file_formats.gwas import Utilities as GWASUtilities
 from genomic_tools_lib.external_tools.tensorqtl import genotypeio, trans
 from pyarrow import parquet as pq
 import pandas
+import numpy
 
 class FileOut:
     def __init__(self, out_dir, chromosome, parquet_geno_metadata=None):
@@ -72,7 +73,7 @@ class FileOut:
                          'non_effect_allele']
         for i in bim_info_cols:
             if i not in df:
-                df[i] = [pandas.__numpy.nan] * df.shape[0]
+                df[i] = [numpy.nan] * df.shape[0]
         bim_df = pandas.read_csv(fp,
                          sep="\s",
                          engine='python',
