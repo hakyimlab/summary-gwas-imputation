@@ -29,6 +29,12 @@ def _read_2(input_prefix, stem, check=False):
     r = re.compile(path_[1] + stem)
     return _read(path_[0], r, check=check)
 
+def _sample_info(args):
+    sample_info = None
+    if args.sample_info:
+        sample_info = pandas.DataFrame({"n_samples": [int(args.sample_info[0])], "population": [args.sample_info[1]], "tissue": [args.sample_info[2]]})
+    return sample_info
+
 def run(args):
     logging.info("Loading model summaries")
     extra = _read_2(args.input_prefix, "_summary.txt.gz")
@@ -59,11 +65,12 @@ def run(args):
         Utilities.save_dataframe(validation,
                                  args.output_prefix + "_validation.txt")
 
+    sample_info = _sample_info(args)
     if args.output_prefix:
         logging.info("Saving dbs and covariance")
         db = args.output_prefix + ".db"
         logging.info("Saving db")
-        Models.create_model_db(db, extra, weights)
+        Models.create_model_db(db, extra, weights, sample_info)
 
         logging.info("Processing covariances")
         genes = {x for x in extra.gene}
@@ -98,6 +105,7 @@ if __name__ == "__main__":
     parser.add_argument("-output_prefix")
     parser.add_argument("-output_prefix_text")
     parser.add_argument("-coalesce_validation", default=False, action='store_true')
+    parser.add_argument("--sample_info", nargs="+", default=[])
     parser.add_argument("-parsimony", type=int, default=logging.INFO)
     parser.add_argument("--skip_check", default=False, action='store_true')
 

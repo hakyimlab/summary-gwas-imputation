@@ -307,6 +307,7 @@ def run(args):
                                          sub_batches=args.sub_batches,
                                          sub_batch=args.sub_batch)
 
+
     # Load dapg raw output
     if args.features_weights:
         logging.info("Loading weights")
@@ -346,6 +347,8 @@ def run(args):
 
     train = train_elastic_net_wrapper if args.mode == "elastic_net" else train_ols
 
+    available_individuals = check_missing(args, data, features)
+
     with gzip.open(wp, "w") as w:
         w.write(("\t".join(WEIGHTS_FIELDS) + "\n").encode())
         with gzip.open(sp, "w") as s:
@@ -373,7 +376,6 @@ def run(args):
 
     logging.info("Finished")
 
-
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser("Train Elastic Net prediction models from GLMNET")
@@ -385,6 +387,9 @@ if __name__ == "__main__":
     parser.add_argument("-window", type = int)
     parser.add_argument("--run_tag")
     parser.add_argument("--output_rsids", action="store_true")
+    parser.add_argument("--only_rsids", action="store_true")
+    parser.add_argument("--keep_highest_frequency_rsid_entry", action="store_true")
+    parser.add_argument("--simplify_data_annotation", action="store_true")
     parser.add_argument("--chromosome", type = int)
     parser.add_argument("--sub_batches", type = int)
     parser.add_argument("--sub_batch", type =int)
@@ -401,6 +406,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_train_test_folds", default=5, type=int)
     parser.add_argument("--n_k_folds", default=10, type=int)
     parser.add_argument("--alpha", default=0.5, type=float)
+
     args = parser.parse_args()
     Logging.configure_logging(args.parsimony, target=sys.stdout)
 

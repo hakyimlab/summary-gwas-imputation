@@ -179,6 +179,7 @@ After running the [model_training.py](#model_trainingpy) script (and possibly af
 | -output_prefix | Filename prefix. Will have `.db`, `.txt.gz`, and `_validation.txt.gz` appended to this value | |
 | -output_prefix_text | Filename prefix. The sqlite database tables will be written to text files if this is specified. | |
 | -coalesce_validation | Specify if the validation files should be searched and collected | |
+| --sample_info | A quick way to specify n_samples, population, tissue | 5503 YRI whole_blood |
 | --skip_check | If this is not specified, some gene models will be discarded due to prediction perfomance criteria | |
 | -parsimony | Logging amount. 1 means that everything is being logged; 10 (the default) is only high-level messages | |
 

@@ -183,7 +183,10 @@ variant_metadata, we'll preload.
 
 def _individual_mask(individuals, specific_individuals):
     if specific_individuals:
-        return [individuals.index(x) for x in specific_individuals]
+        available_specific_individuals = len([x for x in specific_individuals if x in individuals])
+        if available_specific_individuals < len(specific_individuals):
+            logging.warning("Requested specific individuals are missing from the genotype")
+        return [individuals.index(x) for x in specific_individuals if x in individuals]
     else:
         return None
 

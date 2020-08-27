@@ -2,7 +2,11 @@ __author__ = "alvaro barbeira"
 import logging
 import pandas
 import gzip
+import re
 from . import PandasHelpers
+
+def discard_gtex_palindromic_variants(d):
+    return d[~(d.id.str.contains("_A_T_") | d.id.str.contains("_T_A_") | d.id.str.contains("_C_G_") | d.id.str.contains("_G_C_"))]
 
 def allele_key(d):
     def _a(x):
@@ -92,16 +96,22 @@ def match(source, reference):
 
 def sort(d):
     d['chr'] = d['chromosome']
+    chr_re_ = re.compile("chr(\d+)$")
+    chr = [int(x.split("chr")[1]) if chr_re_.search(x) else None for x in d.chromosome]
+    d = d.assign(chr = chr)
     d = d.sort_values(by=["chr", "position"])
     d.drop("chr", axis=1, inplace=True)
     return d
 
 def fill_column_to_median(d, column, dtype=None):
     c = d[column]
-    m = c[~c.isna()].median()
-    d.loc[c.isna(), column] = m
-    if dtype:
-        d[column] = d[column].astype(dtype)
+    if c[c.isna()].shape[0] == c.shape[0]:
+        logging.info("Warning: column %s has no defined values", column)
+    else:
+        m = c[~c.isna()].median()
+        d.loc[c.isna(), column] = m
+        if dtype:
+            d[column] = d[column].astype(dtype)
     return d
 
 def entries_for_window(chromosome, window_start, window_end, metadata):

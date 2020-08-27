@@ -1,6 +1,7 @@
 __author__ = "alvaro barbeira"
 
 import logging
+import re
 
 import numpy
 import pandas
@@ -39,8 +40,16 @@ def _filter_gene_annotation(g, chromosome=None, sub_batches=None, sub_batch=None
         g = PandasHelpers.sub_batch(g, sub_batches, sub_batch)
     return g
 
-def load_gene_annotation(path, chromosome=None, sub_batches=None, sub_batch=None):
+def load_gene_annotation(path, chromosome=None, sub_batches=None, sub_batch=None, simplify_data_annotation=False):
     g = _load_gene_annotation(path)
+    _g = g.gene_id
+
+    if _g[_g.duplicated()].shape:
+        if not simplify_data_annotation:
+            raise RuntimeError("Found non-unique gene id in annotation."
+                        "Can't proceed. Consider a flag such as --simplify_data_annotation")
+        else:
+            g = g.groupby("gene_id").first().reset_index()
     return _filter_gene_annotation(g, chromosome, sub_batches, sub_batch)
 
 def trim_variant_metadata_on_gene_annotation(vm_, gene_annotation, window, _log_level_v=logging.INFO, id_column="id"):
@@ -57,6 +66,14 @@ def trim_variant_metadata_on_gene_annotation(vm_, gene_annotation, window, _log_
     vm_ = vm_.reset_index(drop=True)
     logging.info("Retained metadata for %d/%d variants", vm_.shape[0], total)
     return vm_
+
+def trim_variant_metadata_to_rsids_only(metadata):
+    rsids_ = re.compile("rs\d+")
+    total = metadata.shape[0]
+    metadata = metadata[~metadata.rsid.isnull()]
+    metadata = metadata[metadata.rsid.str.contains(rsids_)]
+    logging.info("Retained metadata for %d/%d variants", metadata.shape[0], total)
+    return metadata
 
 def trim_variants_metadata_on_chromosome(vm_, chromosome):
     vm_ = vm_.loc[vm_.chromosome == chromosome]

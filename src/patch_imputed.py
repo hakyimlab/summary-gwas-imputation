@@ -145,14 +145,9 @@ def patch_gwas(gwas_df, mafs, phenotype, sample_sizes):
   logging.info("Filling with missing MAF's.")
  
   for i, line in gwas_df.iterrows():
-    #if i == 0: from IPython import embed; embed()
     mafs_lst.append(gtex_freq(line, mafs))
-    # if i == 100000: break
     if i % 100000 == 0: 
       print(i)
-
-  # gwas_df = gwas_df.apply(_fill_with_gtex_freq, axis=1)
-  # from IPython import embed; embed();
   
   gwas_df.loc[:,'frequency'] = mafs_lst
   
@@ -164,13 +159,10 @@ def patch_gwas(gwas_df, mafs, phenotype, sample_sizes):
     gwas_df['n_cases'] = sample_sizes[phenotype]['cases']
   else:
     gwas_df['n_cases'] = "NA"
-  #  from IPython import embed; embed();
-  # embed()  
+
   complete_missing_sample_sizes(gwas_df, phenotype, sample_sizes)
-  # embed()  
   
   logging.info("Sample sizes filled in.")
-  #  from IPython import embed; embed();
   return(gwas_df)
 
 ##################################
@@ -317,7 +309,6 @@ def run(args):
     pheno_name = get_phenotype_from_gwas_name(args.gwas_input_filename)
     logging.info("Loading GWAS for phenotype {}".format(pheno_name))
     gwas_df = read_imputed_gwas(os.path.join(args.imputed_results_folder,args.gwas_input_filename))
-    # from IPython import embed; embed();   
 
     # main function
     logging.info("Trying to patch GWAS...")
@@ -330,10 +321,6 @@ def run(args):
 
     logging.info(gwas_output_filename)
     logging.info("Saving patched GWAS in {}...".format(gwas_output_filename))
-  
-    # from IPython import embed; embed();
-    # gwas_df['sample_size'] = gwas_df['sample_size'].astype(int)  # FAILS WHEN COLUMN CONTAINS NA's
-    # gwas_df['position'] = gwas_df['position'].astype(int)
 
     if not os.path.exists(args.gwas_output_folder):
       os.makedirs(args.gwas_output_folder)
