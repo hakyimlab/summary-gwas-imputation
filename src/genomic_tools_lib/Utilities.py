@@ -25,6 +25,11 @@ def maybe_create_folder(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
+def ensure_no_file(fp):
+    if os.path.isfile(fp):
+        logging.error("File already exists at {}. Exiting.".format(fp))
+        exit(1)
+
 ########################################################################################################################
 
 def file_logic(folder, pattern):

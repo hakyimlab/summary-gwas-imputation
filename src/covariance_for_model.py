@@ -9,6 +9,7 @@ import numpy
 import gzip
 
 from pyarrow import parquet as pq
+import pyliftover
 
 from genomic_tools_lib import Logging, Utilities
 from genomic_tools_lib.data_management import TextFileTools
@@ -29,12 +30,103 @@ def get_file_map(args):
         p[k] = g
     return p
 
+def _lift(l, chromosome, position):
+    # NA is important, instead of None or NaN, so that integer positions are not converted to floats by pandas. Yuck!
+    _new_chromosome = "NA"
+    _new_position = "NA"
+    try:
+        p = int(position)
+        l_ = l.convert_coordinate(chromosome, p)
+        if l_ is None:
+            raise ValueError("Chromosome {} and position {}".format(chromosome, position))
+        if l_:
+            if len(l_) > 1:
+                logging.warning("Liftover with more than one candidate: %s", t.variant_id)
+            _new_chromosome = l_[0][0]
+            _new_position = int(l_[0][1])
+    except:
+        pass
+    return _new_chromosome, _new_position
+
+def liftover(args, d):
+    logging.info("Performing liftover")
+    l = pyliftover.LiftOver(args.liftover)
+    new_position = []
+    new_chromosome = []
+    for t in d.itertuples():
+        _new_chromosome, _new_position = _lift(l, t.chromosome, t.position)
+
+        new_chromosome.append(_new_chromosome)
+        new_position.append(_new_position)
+
+    d = d.assign(chromosome=new_chromosome)
+    d = d.assign(position=new_position)
+    d = d[d.chromosome.astype(str) !="NA"]
+    d = d[d.position.astype(str) != "NA"]
+
+    logging.log(9, "%d variants after liftover", d.shape[0])
+    return d
+
+def lift_metadata(metadata, lift_fp):
+    l = pyliftover.LiftOver(lift_fp)
+    new_position = []
+    new_chromosome = []
+    for t in metadata.itertuples():
+        _new_chrom, _new_pos = _lift(l, t.chromosome, t.position)
+        new_chromosome.append(_new_chrom)
+        new_position.append(_new_pos)
+    metadata = metadata.assign(chromosome = new_chromosome)
+    metadata = metadata.assign(position = new_position)
+
+    metadata = metadata[metadata.chromosome.astype(str) != "NA"]
+    metadata = metadata[metadata.position.astype(str) != "NA"]
+    logging.log(9, "%d variants after liftover", metadata.shape[0])
+    metadata = metadata.rename({'id': 'geno_id'}, axis=1)
+    metadata = canonical_variant_id(metadata, name='model_id')
+
+    print(metadata.head())
+    return metadata[['geno_id', 'model_id']]
+
+
+
+def canonical_variant_id(d, name='id', allele_0='allele_0', allele_1='allele_1'):
+    cols = ['chromosome', 'position', allele_1, allele_0]
+    for i in cols:
+        if i not in d:
+            raise ValueError("To create variant ID need column: {}".format(i))
+
+    d[name] = (d['chromosome'].astype(str) + '_'
+                       + d['position'].astype(str) + "_"
+                       + d[allele_0] + "_" + d[allele_1])
+    return d
+
+def load_gene_d(dosage, variants, individuals=None):
+    if individuals:
+        dd = Parquet._read(dosage, columns=variants, specific_individuals=individuals)
+        del dd["individual"]
+    else:
+        dd = Parquet._read(dosage, columns=variants, skip_individuals=True)
+    logging.log(4, "Loaded {} snps".format(len(dd)))
+
+    return dd
+
+
+
 n_ = re.compile("^(\d+)$")
 
 def run(args):
     if os.path.exists(args.output):
         logging.info("Output already exists, either delete it or move it")
         return
+
+    if args.parquet_metadata is not None and args.metadata_lift is not None:
+        logging.info("Loading metadata for liftover")
+        metadata = pq.read_table(args.parquet_metadata).to_pandas()
+        metadata['chromosome'] = 'chr' + metadata['chromosome'].astype(str)
+        logging.log(9, "%d variants before liftover", metadata.shape[0])
+        lifted_variants = lift_metadata(metadata, args.metadata_lift)
+    else:
+        lifted_variants = None
 
     logging.info("Getting parquet genotypes")
     file_map = get_file_map(args)
@@ -43,7 +135,7 @@ def run(args):
     with sqlite3.connect(args.model_db) as connection:
         # Pay heed to the order. This avoids arbitrariness in sqlite3 loading of results.
         extra = pandas.read_sql("SELECT * FROM EXTRA order by gene", connection)
-        extra = extra[extra["n.snps.in.model"] > 0]
+        #extra = extra[extra["n.snps.in.model"] > 0]
 
     individuals = TextFileTools.load_list(args.individuals) if args.individuals else None
 
@@ -55,36 +147,45 @@ def run(args):
         with sqlite3.connect(args.model_db) as connection:
             for i,t in enumerate(extra.itertuples()):
                 g_ = t.gene
+                gene_d = {}
                 logging.log(9, "Proccessing %i/%i:%s", i+1, extra.shape[0], g_)
                 w = pandas.read_sql("select * from weights where gene = '{}';".format(g_), connection)
-                chr_ = w.varID.values[0].split("_")[0].split("chr")[1]
-                if not n_.search(chr_):
-                    logging.log(9, "Unsupported chromosome: %s", chr_)
-                    continue
-                dosage = file_map[int(chr_)]
-
-                if individuals:
-                    d = Parquet._read(dosage, columns=w.varID.values, specific_individuals=individuals)
-                    del d["individual"]
+                logging.log(5, "Weights loaded for gene {}: {}".format(g_, w.shape[0]))
+                if lifted_variants is not None:
+                    w = w.merge(lifted_variants, left_on='varID', right_on='model_id')
+                    logging.log(5, "Weights after lifted_variants merge: {}".format(w.shape[0]))
                 else:
-                    d = Parquet._read(dosage, columns=w.varID.values, skip_individuals=True)
+                    w['geno_id'] = w['varID']
+                print(w.head())
+                w['chr'] = [x[0] for x in w['varID'].str.split("_")]
+                w['chr'] = w['chr'].str.lstrip('chr')
+                w_gb = w.copy().groupby('chr')
+                if len(w_gb.groups.keys()) == 0:
+                    logging.log(9, "No chromosomes found for %s, skipping", g_)
+                    continue
+                for chr_, w_chr in w_gb:
+                    if not n_.search(chr_):
+                        logging.log(9, "Unsupported chromosome: %s", chr_)
+                        continue
+                    dosage = file_map[int(chr_)]
+                    gene_d.update(load_gene_d(dosage,
+                                                  w_chr.geno_id.values,
+                                                  individuals=individuals))
 
-                var_ids = list(d.keys())
+                var_ids = list(gene_d.keys())
                 if len(var_ids) == 0:
-                    if len(w.varID.values) == 1:
-                        logging.log(9, "workaround for single missing genotype at %s", g_)
-                        d = {w.varID.values[0]:[0,1]}
-                    else:
-                        logging.log(9, "No genotype available for %s, skipping",g_)
-                        next
+                    logging.log(9, "No genotype available for %s, skipping",g_)
+                    logging.log(4, 'Could not find {}'.format(w_chr.varID.values[:5]))
+                    continue
 
                 if args.output_rsids:
-                    ids = [x for x in pandas.DataFrame({"varID": var_ids}).merge(w[["varID", "rsid"]], on="varID").rsid.values]
+                    k = 'rsid'
                 else:
-                    ids = var_ids
+                    k = 'varID'
+                ids = [x for x in pandas.DataFrame({"geno_id": var_ids}).merge(w[["geno_id", k]], on="geno_id")[k].values]
 
-                c = numpy.cov([d[x] for x in var_ids])
-                c = matrices._flatten_matrix_data([(w.gene.values[0], ids, c)])
+                c = numpy.cov([gene_d[x] for x in var_ids])
+                c = matrices._flatten_matrix_data([(g_, ids, c)])
                 for entry in c:
                     l = "{} {} {} {}\n".format(entry[0], entry[1], entry[2], entry[3])
                     f.write(l.encode())
@@ -99,6 +200,8 @@ if __name__ == "__main__":
     parser.add_argument("-model_db", help="Where to save stuff")
     parser.add_argument("-output", help="Where to save stuff")
     parser.add_argument("--output_rsids", action="store_true")
+    parser.add_argument("--metadata_lift")
+    parser.add_argument("--parquet_metadata")
     parser.add_argument("--individuals")
     parser.add_argument("-parsimony", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
 

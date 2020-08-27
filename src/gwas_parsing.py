@@ -78,6 +78,25 @@ def fill_coords(args, d):
     logging.info("%d variants after filling coordinates", d.shape[0])
     return d
 
+# def _lift(l, chromosome, position):
+#     # NA is important, instead of None or NaN, so that integer positions are not converted to floats by pandas. Yuck!
+#     _new_chromosome = "NA"
+#     _new_position = "NA"
+#     # try:
+#     p = int(position)
+#     l_ = l.convert_coordinate(chromosome, p)
+#     # if l_ is None:
+#     #     raise ValueError("Chromosome {} and position {}".format(chromosome, position))
+#     if l_:
+#         if len(l_) > 1:
+#             logging.warning("Liftover with more than one candidate: %s", t.variant_id)
+#         _new_chromosome = l_[0][0]
+#         _new_position = int(l_[0][1])
+#     # except:
+#     #     logging.warning("Reached exception with liftover")
+#     return _new_chromosome, _new_position
+
+
 def _lift(l, chromosome, position):
     # NA is important, instead of None or NaN, so that integer positions are not converted to floats by pandas. Yuck!
     _new_chromosome = "NA"
@@ -93,7 +112,6 @@ def _lift(l, chromosome, position):
     except:
         pass
     return _new_chromosome, _new_position
-
 def liftover(args, d):
     logging.info("Performing liftover")
     l = pyliftover.LiftOver(args.liftover)
@@ -107,6 +125,8 @@ def liftover(args, d):
 
     d = d.assign(chromosome=new_chromosome)
     d = d.assign(position=new_position)
+    d = d[d.chromosome.astype(str) !="NA"]
+    d = d[d.position.astype(str) != "NA"]
 
     logging.info("%d variants after liftover", d.shape[0])
     return d
@@ -240,9 +260,23 @@ def fill_from_metadata(args, d):
     return d
 
 def clean_up(d):
-    d = d.assign(sample_size=[int(x) if not math.isnan(x) else "NA" for x in d.sample_size])
+    if 'sample_size' in d:
+        d = d.assign(sample_size=[int(x) if not math.isnan(x) else "NA" for x in d.sample_size])
+    else:
+        d = d.assign(sample_size=['NA'] * d.shape[0])
     if "chromosome" in d.columns.values and "position" in d.columns.values:
         d = Genomics.sort(d)
+    return d
+
+def canonical_variant_id(d):
+    cols = ['chromosome', 'position', 'effect_allele', 'non_effect_allele']
+    for i in cols:
+        if i not in d:
+            raise ValueError("To create variant ID need column: {}".format(i))
+
+    d['variant_id'] = ('chr' + d['chromosome'].astype(str) + '_'
+                       + d['position'].astype(str) + "_"
+                       + d['non_effect_allele'] + "_" + d['effect_allele'])
     return d
 
 def run(args):
@@ -252,10 +286,11 @@ def run(args):
 
     start = timer()
     logging.info("Parsing input GWAS")
+    logging.info("Input file: {}".format(args.gwas_file))
     d = GWAS.load_gwas(args.gwas_file, args.output_column_map,
             force_special_handling=args.force_special_handling, skip_until_header=args.skip_until_header,
             separator=args.separator, handle_empty_columns=args.handle_empty_columns, input_pvalue_fix=args.input_pvalue_fix,
-            enforce_numeric_columns=args.enforce_numeric_columns)
+            enforce_numeric_columns=args.enforce_numeric_columns, no_column_names=args.no_column_names)
     logging.info("loaded %d variants", d.shape[0])
 
     d = pre_process_gwas(args, d)
@@ -272,6 +307,10 @@ def run(args):
 
     if args.snp_reference_metadata:
         d = fill_from_metadata(args, d)
+
+    if args.canonical_variant_id:
+        d = canonical_variant_id(d)
+
 
     if args.output_order:
         order = args.output_order
@@ -302,6 +341,9 @@ if __name__ == "__main__":
     parser.add_argument("-output_order", help="Specify output order", nargs='+')
     parser.add_argument("-output", help="Where the output should go")
     parser.add_argument("--keep_all_original_entries", action="store_true")
+    parser.add_argument("--canonical_variant_id", action='store_true')
+    parser.add_argument("--no_column_names", action='store_true', default=False)
+    parser.add_argument("--separator")
     parser.add_argument("-verbosity", help="Log verbosity level. 1 is everything being logged. 10 is only high level messages, above 10 will hardly log anything", default = "10")
     GWASUtilities.add_gwas_arguments_to_parser(parser)
     args = parser.parse_args()

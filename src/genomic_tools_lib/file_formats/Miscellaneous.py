@@ -10,3 +10,9 @@ def dapg_signals(file, threshold=None, id_whitelist=None):
         w = w[w.pip >= threshold]
     w = w.sort_values("gene")
     return w
+
+
+def dapg_preparsed(file):
+    df = pandas.read_table(file)
+    df = df.rename(mapper={'pip':'w'}, axis=1)
+    return df

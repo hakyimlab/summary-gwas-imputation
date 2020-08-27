@@ -5,6 +5,7 @@ import re
 
 import numpy
 import pandas
+from pyarrow import parquet as pq
 
 from . import Genotype
 from . import Study
@@ -12,7 +13,7 @@ from ..Exceptions import ReportableException
 from ..miscellaneous import Genomics, PandasHelpers
 
 def get_gene_to_row(gene_annotation):
-    return {row.gene_id: i for i, row in enumerate(gene_annotation.itertuples())}
+    return {row.gene_name: i for i, row in enumerate(gene_annotation.itertuples())}
 
 def get_gene_annotation(gene_annotation, gene_to_row, gene_id):
     return gene_annotation.iloc[gene_to_row[gene_id]]
@@ -101,8 +102,9 @@ def _get_variants_for_gene(gene_id, gene_annotation, gene_to_row, window, study)
     variants = study.get_variants(variants_metadata.id.tolist(), to_pandas=True)
     return variants, variants_metadata, g_annotation
 
-def _get_sub_study_for_gene(gene_id, gene_annotation, gene_to_row, window, study, rename_pheno="pheno"):
-    variants, variants_metadata, gene_annotation = _get_variants_for_gene(gene_id, gene_annotation, gene_to_row, window, study)
+def _get_sub_study_for_gene(gene_id, gene_name, gene_annotation, gene_to_row, window, study, rename_pheno="pheno"):
+    variants, variants_metadata, gene_annotation = _get_variants_for_gene(gene_name, gene_annotation, gene_to_row, window, study)
+    logging.log(5, "Gene Name: {}, variants: {}".format(gene_name, variants.shape[1]))
 
     phenotype = study.get_phenos([gene_id], to_pandas=True)
     if not gene_id in phenotype:
@@ -124,8 +126,14 @@ def _get_sub_study_for_gene(gene_id, gene_annotation, gene_to_row, window, study
 
     return _study
 
-def _get_study_for_gene(context, gene, rename_pheno="pheno"):
-    study = _get_sub_study_for_gene(gene, context.get_gene_annotation(), context.get_gene_to_row(), context.get_window(), context.get_study(), rename_pheno=rename_pheno)
+def _get_study_for_gene(context, gene_id, gene_name, rename_pheno="pheno"):
+    study = _get_sub_study_for_gene(gene_id,
+                                    gene_name,
+                                    context.get_gene_annotation(),
+                                    context.get_gene_to_row(),
+                                    context.get_window(),
+                                    context.get_study(),
+                                    rename_pheno=rename_pheno)
     return study
 
 
@@ -148,6 +156,49 @@ def impute_to_mean_conversion(dosage_raw):
     comps = [float(x) if x != "NA" else mean for x in dosage_raw]
     return comps
 
+def gene_annotation_from_parquet_phenotype(pq_fp):
+    """
+
+    :param pq_fp: Parquet phenotype file.
+    :param region_fp: Text file with LD-independent regions. Columns 'chr', 'start', 'stop'
+    :return:
+    """
+    pheno_columns = pq.ParquetFile(pq_fp).metadata.schema.names
+    pheno_columns.remove("individual")
+    ll = len(pheno_columns)
+    logging.info("Creating gene annotation from {} phenotypes".format(ll))
+    df = pandas.DataFrame({'gene_name': pheno_columns,
+                               'gene_id': pheno_columns,
+                               'gene_type': ['NA'] * ll })
+
+    return df
+
+def expand_gene_annotation_from_regions(df, region_fp, chromosome):
+    pheno_columns = df.gene_name.values
+
+    region_df = pandas.read_csv(region_fp, engine='python', sep="\s+")
+    region_df['chr'] = region_df['chr'].str.lstrip('chr').astype(int)
+    region_df = region_df.rename(mapper={'chr': 'chromosome',
+                                         'stop': 'end'},
+                                 axis=1)
+    region_df['region_id'] = region_df.index
+    if chromosome is not None:
+        region_df = region_df[region_df['chromosome'] == chromosome]
+    logging.info("Expanding gene annotation with {} LD-independent regions".format(region_df.shape[0]))
+    pheno_region_lst = []
+    for r in region_df.itertuples():
+        r_dd = {'region_id': r.region_id,
+                'start': r.start,
+                'end': r.end,
+                'chromosome': r.chromosome}
+        region_ = str(r.region_id)
+        for pheno in pheno_columns:
+            dd = r_dd.copy()
+            dd['gene_name'] = pheno + "_" + region_
+            dd['gene_id'] = pheno
+            dd['gene_type'] = "NA"
+            pheno_region_lst.append(dd)
+    return pandas.DataFrame(pheno_region_lst)
 
 class _StudyBasedContext:
     def get_study(self): raise RuntimeError("Not implemented")

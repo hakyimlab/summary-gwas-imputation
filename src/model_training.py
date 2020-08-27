@@ -25,11 +25,20 @@ from genomic_tools_lib.miscellaneous import matrices, Genomics, Math
 
 ###############################################################################
 import rpy2.robjects as robjects
-from rpy2.robjects import numpy2ri
-numpy2ri.activate()
+# from rpy2.robjects import numpy2ri
+# numpy2ri.activate()
+
+# from rpy2.robjects import pandas2ri
+# pandas2ri.activate()
+# from rpy2.robjects.conversion import py2rpy, rpy2py
+
+# from rpy2.robjects import numpy2ri
+# numpy2ri.activate()
 
 from rpy2.robjects import pandas2ri
-pandas2ri.activate()
+from rpy2.robjects.conversion import localconverter
+# pandas2ri.activate()
+
 
 def initialize():
     global train_elastic_net
@@ -39,6 +48,18 @@ def initialize():
     robjects.r['source'](path)
     train_elastic_net = robjects.r['train_elastic_net']
     set_seed = robjects.r['set_seed']
+
+def _r_to_pandas(r_df):
+    with localconverter(robjects.default_converter + pandas2ri.converter):
+        pd_from_r_df = robjects.conversion.rpy2py(r_df)
+    return pd_from_r_df
+
+def _pandas_to_r(pd_df):
+    with localconverter(robjects.default_converter + pandas2ri.converter):
+        r_from_pd_df = robjects.conversion.py2rpy(pd_df)
+
+    return r_from_pd_df
+
 ###############################################################################
 
 def _save(d_, features_, features_data_, gene):
@@ -54,26 +75,44 @@ def get_weights(x_weights, id_whitelist):
         raise RuntimeError("unsupported weights argument")
     return w
 
+def get_dapg_preparsed(weights):
+    df = Miscellaneous.dapg_preparsed(weights)
+    if 'w' in df:
+        df.w = 1 - df.w
+    return df
+
 ###############################################################################
 
-def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, nested_folds=10):
+def train_elastic_net_wrapper(features_data_, features_, d_, data_annotation_,
+                              x_w=None, prune=True, n_train_test_folds=5, n_k_folds=10, alpha=0.5):
     x = numpy.array([features_data_[v] for v in features_.id.values])
     dimnames = robjects.ListVector(
         [(1, robjects.StrVector(d_["individual"])), (2, robjects.StrVector(features_.id.values))])
     x = robjects.r["matrix"](robjects.FloatVector(x.flatten()), ncol=features_.shape[0], dimnames=dimnames)
     y = robjects.FloatVector(d_[data_annotation_.gene_id])
-    nested_folds = robjects.FloatVector([nested_folds])
+    n_train_test_folds = robjects.FloatVector([n_train_test_folds])
+    n_k_folds = robjects.FloatVector([n_k_folds])
     #py2ri chokes on None.
     if x_w is None:
-        res = train_elastic_net(y, x, n_train_test_folds=nested_folds)
+        res = train_elastic_net(y,
+                                x,
+                                n_train_test_folds=n_train_test_folds,
+                                n_k_folds=n_k_folds,
+                                alpha=alpha)
     else:
-        res = train_elastic_net(y, x, penalty_factor=x_w, n_train_test_folds=nested_folds)  # observation weights, not explanatory variable weight :( , x_weight = x_w)
-    return pandas2ri.ri2py(res[0]), pandas2ri.ri2py(res[1])
+        # observation weights, not explanatory variable weight :( , x_weight = x_w)
+        res = train_elastic_net(y,
+                                x,
+                                penalty_factor=x_w,
+                                n_train_test_folds=n_train_test_folds,
+                                n_k_folds=n_k_folds,
+                                alpha=alpha)
+    return _r_to_pandas(res[0]), _r_to_pandas(res[1])
 
 ###############################################################################
 
-def ols_pred_perf(data, n_folds=10):
-    kf = KFold(n_splits=n_folds, shuffle=True)
+def ols_pred_perf(data, n_train_test_folds=5):
+    kf = KFold(n_splits=n_train_test_folds, shuffle=True)
 
     rho_f=[]
     R2_f=[]
@@ -96,7 +135,7 @@ def ols_pred_perf(data, n_folds=10):
         zscore_f.append(zscore)
 
     rho_avg = numpy.average(rho_f)
-    zscore_est = numpy.sum(zscore_f)/numpy.sqrt(n_folds)
+    zscore_est = numpy.sum(zscore_f)/numpy.sqrt(n_train_test_folds)
     zscore_pval = scipy.stats.norm.sf(zscore_est)
     d = {"test_R2_avg": [numpy.average(R2_f)], "test_R2_sd": [numpy.std(R2_f)],
          "rho_avg": [rho_avg], "rho_avg_squared": [rho_avg**2], "rho_se":[numpy.std(rho_f)],
@@ -120,7 +159,7 @@ def prune(data):
     return data.drop(discard, axis=1)
 
 
-def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, nested_folds=10):
+def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=True, n_k_folds=10, alpha=0.5, n_train_test_folds=5):
     ids=[]
     data = {}
     for v in features_.id.values:
@@ -130,8 +169,8 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
             ids.append(v)
     data = pandas.DataFrame(data)
 
-    if prune:
-        data = prune(data)
+    # if prune:
+    #     data = prune(data)
     ids = data.columns.values
     if len(ids) == 0:
         w = pandas.DataFrame({"feature":[], "weight":[]})
@@ -145,7 +184,7 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
     results = smf.ols('y ~ {}'.format(" + ".join(ids)), data=data).fit()
     weights = results.params[1:].to_frame().reset_index().rename(columns={"index": "feature", 0: "weight"})
-    summary = ols_pred_perf(data, nested_folds)
+    summary = ols_pred_perf(data, n_train_test_folds=n_train_test_folds)
     summary = summary.assign(alpha=None, n_snps_in_window=features_.shape[0],
                            cv_R2_avg=None, cv_R2_sd=None, in_sample_R2=None)
     summary["n.snps.in.model"] = len(ids)
@@ -154,28 +193,62 @@ def train_ols(features_data_, features_, d_, data_annotation_, x_w=None, prune=T
 
 ########################################################################################################################
 
-def process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, summary_fields, train, postfix=None, nested_folds=10, use_individuals=None):
-    gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
-    logging.log(8, "loading data")
-    d_ = Parquet._read(data, [data_annotation_.gene_id], specific_individuals=use_individuals)
-    features_ = Genomics.entries_for_gene_annotation(data_annotation_, args.window, features_metadata)
+def process(w, s, c, data_handler, data_annotation_, features_handler,
+             weights, summary_fields, train, postfix=None,
+            n_k_folds=10, n_train_test_folds=5, alpha=0.5):
+    """
 
-    if x_weights is not None:
-        x_w = features_[["id"]].merge(x_weights[x_weights.gene_id == data_annotation_.gene_id], on="id")
-        features_ = features_[features_.id.isin(x_w.id)]
-        x_w = robjects.FloatVector(x_w.w.values)
+    :param w: weights file handle
+    :param s: summary file handle
+    :param c: covariance file handle
+    :param data_handler: class DataHandler
+    :param data_annotation_: Pandas tuple with attributes 'gene_name', 'gene_id', 'gene_type'
+    :param features_handler: class FeaturesHandler
+    :param weights: Bool
+    :param summary_fields: list of strings
+    :param train: function. Training function
+    :param postfix: int. If doing repeats, this is the repeat number.
+    :param nested_folds: int. Number of nested folds.
+    :param alpha: float. Mixing parameter for ElasticNet algorithm
+    :return:
+    """
+    if alpha is None:
+        alpha = 0.5
+    # Postfix gene ID if necessary
+    gene_id_ = data_annotation_.gene_id if postfix is None else "{}-{}".format(data_annotation_.gene_id, postfix)
+
+    # Load phenotype
+    logging.log(8, "Loading phenotype data")
+    d_ = data_handler.load_pheno(data_annotation_.gene_id)
+
+    # Load features: pandas DF with columns 'id', 'chromosome'
+    features_ = data_handler.get_features(data_annotation_.gene_id)
+
+    if weights:
+        logging.log(5, "Sending weights")
+        x_w = robjects.FloatVector(features_.w.values)
     else:
+        logging.log(5, "Not sending weights")
         x_w = None
 
     if features_.shape[0] == 0:
         logging.log(9, "No features available")
         return
 
-    features_data_ = Parquet._read(features, [x for x in features_.id.values],
-                                   specific_individuals=[x for x in d_["individual"]])
+    # Load available SNPs from genotype data;
+    logging.log(8, "Loading genotype data")
+    features_data_, features_ = features_handler.load_features(features_, [x for x in d_['individual']])
 
     logging.log(8, "training")
-    weights, summary = train(features_data_, features_, d_, data_annotation_, x_w, not args.dont_prune, nested_folds)
+    weights, summary = train(features_data_=features_data_,
+                             features_=features_,
+                             d_=d_,
+                             data_annotation_=data_annotation_,
+                             x_w=x_w,
+                             prune=not args.dont_prune,
+                             n_train_test_folds=n_train_test_folds,
+                             n_k_folds=n_k_folds,
+                             alpha=alpha)
 
     if weights.shape[0] == 0:
         logging.log(9, "no weights, skipping")
@@ -210,125 +283,55 @@ def process(w, s, c, data, data_annotation_, features, features_metadata, x_weig
         l = "{} {} {} {}\n".format(cov_[0], cov_[1], cov_[2], cov_[3]).encode()
         c.write(l)
 
-def check_missing(args, data, features):
-    m = None
-    if args.missing_individuals:
-        logging.info("Instructed to check for individuals missing from the genotype")
-        p = Parquet._read(data, ["individual"])
-        g = Parquet._read(features, ["individual"])
-        m = [x for x in p["individual"] if x in g["individual"]]
-        logging.info("Found %d individuals", len(m))
-    return m
+
+
 
 ########################################################################################################################
-
 def run(args):
-    wp = args.output_prefix + "_weights.txt.gz"
-    if os.path.exists(wp):
-        logging.info("Weights output exists already, delete it or move it")
-        return
-
-    sp = args.output_prefix + "_summary.txt.gz"
-    if os.path.exists(sp):
-        logging.info("Summary output exists already, delete it or move it")
-        return
-
-    cp = args.output_prefix + "_covariance.txt.gz"
-    if os.path.exists(wp):
-        logging.info("covariance output exists already, delete it or move it")
-        return
-
-    r = args.output_prefix + "_run.txt.gz"
-    if os.path.exists(wp):
-        logging.info("run output exists already, delete it or move it")
-        return
 
     logging.info("Starting")
     Utilities.ensure_requisite_folders(args.output_prefix)
 
-    logging.info("Opening data")
-    data = pq.ParquetFile(args.data)
-    available_data = {x for x in data.metadata.schema.names}
+    wp = args.output_prefix + "_weights.txt.gz"
+    sp = args.output_prefix + "_summary.txt.gz"
+    cp = args.output_prefix + "_covariance.txt.gz"
+    r = args.output_prefix + "_run.txt.gz"
 
-    logging.info("Loading data annotation")
-    data_annotation = StudyUtilities.load_gene_annotation(args.data_annotation, args.chromosome, args.sub_batches, args.sub_batch, args.simplify_data_annotation)
-    data_annotation = data_annotation[data_annotation.gene_id.isin(available_data)]
-    if args.gene_whitelist:
-        logging.info("Applying gene whitelist")
-        data_annotation = data_annotation[data_annotation.gene_id.isin(set(args.gene_whitelist))]
-    logging.info("Kept %i entries", data_annotation.shape[0])
+    out_files = [wp, sp, cp, r]
+    for i in out_files:
+        Utilities.ensure_no_file(i)
 
-    logging.info("Opening features annotation")
-    if not args.chromosome:
-        features_metadata = pq.read_table(args.features_annotation).to_pandas()
-    else:
-        features_metadata = pq.ParquetFile(args.features_annotation).read_row_group(args.chromosome-1).to_pandas()
 
-    if args.output_rsids:
-        if not args.keep_highest_frequency_rsid_entry and features_metadata[(features_metadata.rsid != "NA") & features_metadata.rsid.duplicated()].shape[0]:
-            logging.warning("Several variants map to a same rsid (hint: multiple INDELS?).\n"
-                            "Can't proceed. Consider the using the --keep_highest_frequency_rsid flag, or models will be ill defined.")
-            return
+    logging.info("Opening pheno data")
+    d_handler = Parquet.PhenoDataHandler(args.data,
+                                         sub_batches=args.sub_batches,
+                                         sub_batch=args.sub_batch)
 
-    if args.chromosome and args.sub_batches:
-        logging.info("Trimming variants")
-        features_metadata = StudyUtilities.trim_variant_metadata_on_gene_annotation(features_metadata, data_annotation, args.window)
-        logging.info("Kept %d", features_metadata.shape[0])
 
-    if args.variant_call_filter:
-        logging.info("Filtering variants by average call rate")
-        features_metadata = features_metadata[features_metadata.avg_call > args.variant_call_filter]
-        logging.info("Kept %d", features_metadata.shape[0])
-
-    if args.variant_r2_filter:
-        logging.info("Filtering variants by imputation R2")
-        features_metadata = features_metadata[features_metadata.r2 > args.variant_r2_filter]
-        logging.info("Kept %d", features_metadata.shape[0])
-
-    if args.variant_variance_filter:
-        logging.info("Filtering variants by (dosage/2)'s variance")
-        features_metadata = features_metadata[features_metadata["std"]/2 > numpy.sqrt(args.variant_variance_filter)]
-        logging.info("Kept %d", features_metadata.shape[0])
-
-    if args.discard_palindromic_snps:
-        logging.info("Discarding palindromic snps")
-        features_metadata = Genomics.discard_gtex_palindromic_variants(features_metadata)
-        logging.info("Kept %d", features_metadata.shape[0])
-
-    if args.rsid_whitelist:
-        logging.info("Filtering features annotation for whitelist")
-        whitelist = TextFileTools.load_list(args.rsid_whitelist)
-        whitelist = set(whitelist)
-        features_metadata = features_metadata[features_metadata.rsid.isin(whitelist)]
-        logging.info("Kept %d", features_metadata.shape[0])
-
-    if args.only_rsids:
-        logging.info("discarding non-rsids")
-        features_metadata = StudyUtilities.trim_variant_metadata_to_rsids_only(features_metadata)
-        logging.info("Kept %d", features_metadata.shape[0])
-
-        if args.keep_highest_frequency_rsid_entry and features_metadata[(features_metadata.rsid != "NA") & features_metadata.rsid.duplicated()].shape[0]:
-            logging.info("Keeping only the highest frequency entry for every rsid")
-            k = features_metadata[["rsid", "allele_1_frequency", "id"]]
-            k.loc[k.allele_1_frequency > 0.5, "allele_1_frequency"] = 1 - k.loc[k.allele_1_frequency > 0.5, "allele_1_frequency"]
-            k = k.sort_values(by=["rsid", "allele_1_frequency"], ascending=False)
-            k = k.groupby("rsid").first().reset_index()
-            features_metadata = features_metadata[features_metadata.id.isin(k.id)]
-            logging.info("Kept %d", features_metadata.shape[0])
-        else:
-            logging.info("rsids are unique, no need to restrict to highest frequency entry")
-
+    # Load dapg raw output
     if args.features_weights:
         logging.info("Loading weights")
-        x_weights = get_weights(args.features_weights, {x for x in features_metadata.id})
-        logging.info("Filtering features metadata to those available in weights")
-        features_metadata = features_metadata[features_metadata.id.isin(x_weights.id)]
-        logging.info("Kept %d entries", features_metadata.shape[0])
-    else:
-        x_weights = None
+        weights = get_weights(args.features_weights, None)
+        d_handler.add_features_weights(weights)
 
-    logging.info("Opening features")
-    features = pq.ParquetFile(args.features)
+    # Load preparsed finemapping output, and assign weights
+    if args.preparsed_weights:
+        logging.info("Loading preparsed weights")
+        weights = get_dapg_preparsed(args.preparsed_weights)
+        d_handler.add_features_weights(weights)
+
+    # Load preparsed finemapping output, do not assign weights
+    if args.preparsed_features:
+        logging.info("Loading preparsed features")
+        features = get_dapg_preparsed(args.preparsed_features[0])
+        d_handler.add_features_preparsed(features,
+                                         snp_column=args.preparsed_features[1])
+
+    f_handler = Parquet.MultiFileGenoHandler(args.features,
+                                             args.features_annotation)
+    logging.info("Loading geno metadata")
+    features_metadata = f_handler.load_metadata()
+    d_handler.add_features_metadata(features_metadata)
 
     logging.info("Setting R seed")
     s = numpy.random.randint(1e8)
@@ -352,18 +355,24 @@ def run(args):
             s.write(("\t".join(SUMMARY_FIELDS) + "\n").encode())
             with gzip.open(cp, "w") as c:
                 c.write("GENE RSID1 RSID2 VALUE\n".encode())
-                for i,data_annotation_ in enumerate(data_annotation.itertuples()):
+                for i,data_annotation_ in enumerate(d_handler.data_annotation.itertuples()):
                     if args.MAX_M and  i>=args.MAX_M:
                         logging.info("Early abort")
                         break
-                    logging.log(9, "processing %i/%i:%s", i+1, data_annotation.shape[0], data_annotation_.gene_id)
-
+                    logging.log(9, "processing %i/%i:%s", i+1, d_handler.data_annotation.shape[0], data_annotation_.gene_id)
                     if args.repeat:
                         for j in range(0, args.repeat):
                             logging.log(9, "%i-th reiteration", j)
-                            process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, j, nested_folds=args.nested_cv_folds, use_individuals=available_individuals)
+                            process(w, s, c, d_handler, data_annotation_,
+                                    f_handler, d_handler.send_weights,
+                                    SUMMARY_FIELDS, train, j, args.nested_cv_folds, alpha=args.alpha)
                     else:
-                        process(w, s, c, data, data_annotation_, features, features_metadata, x_weights, SUMMARY_FIELDS, train, nested_folds=args.nested_cv_folds, use_individuals=available_individuals)
+                        process(w, s, c, d_handler, data_annotation_,
+                                f_handler, d_handler.send_weights,
+                                SUMMARY_FIELDS, train,
+                                n_train_test_folds=args.n_train_test_folds,
+                                n_k_folds=args.n_k_folds,
+                                alpha=args.alpha)
 
     logging.info("Finished")
 
@@ -373,7 +382,7 @@ if __name__ == "__main__":
     parser.add_argument("--features_weights", nargs="+")
     parser.add_argument("-features")
     parser.add_argument("-features_annotation")
-    parser.add_argument("-data")
+    parser.add_argument("-data", help="Phenotype data, parquet format")
     parser.add_argument("-data_annotation")
     parser.add_argument("-window", type = int)
     parser.add_argument("--run_tag")
@@ -388,18 +397,18 @@ if __name__ == "__main__":
     parser.add_argument("--MAX_M", type=int)
     parser.add_argument("--mode", default="elastic_net", help="'elastic_net' or 'ols'")
     parser.add_argument("--gene_whitelist", nargs="+", default=None)
+    parser.add_argument("--preparsed_weights", help="Pre-parsed dapg weights")
+    parser.add_argument("--preparsed_features", help="Pre-parsed features (not weights) and snp column name", nargs=2)
     parser.add_argument("--dont_prune", action="store_true")
     parser.add_argument("-output_prefix")
     parser.add_argument("-parsimony", default=10, type=int)
     parser.add_argument("--repeat", default=None, type=int)
-    parser.add_argument("--nested_cv_folds", default=5, type=int)
-    parser.add_argument("--discard_palindromic_snps", action="store_true")
-    parser.add_argument("--missing_individuals", action="store_true")
-    parser.add_argument("--variant_variance_filter", type=float)
-    parser.add_argument("--variant_call_filter", type=float)
-    parser.add_argument("--variant_r2_filter", type=float)
+    parser.add_argument("--n_train_test_folds", default=5, type=int)
+    parser.add_argument("--n_k_folds", default=10, type=int)
+    parser.add_argument("--alpha", default=0.5, type=float)
+
     args = parser.parse_args()
-    Logging.configure_logging(args.parsimony)
+    Logging.configure_logging(args.parsimony, target=sys.stdout)
 
     initialize()
 
