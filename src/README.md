@@ -6,13 +6,21 @@
     1. [Parquet Genotype](#parquet-genotype)
     1. [Parquet Phenotype](#parquet-phenotype)
 1. [Scripts](#scripts)
-
-
+    1. [covariance_for_model.py](#covariance_for_modelpy)
+    1. [generate_qq_plots.py](#generate_qq_plotspy)
+    1. [gwas_parsing.py](#gwas_parsingpy)
+    1. [model_training.py](#model_trainingpy)
+    1. [model_training_genotype_to_parquet.py](#model_training_genotype_to_parquetpy)
+    1. [post_process_model_training.py](#post_process_model_trainingpy)
+    1. [regress_out_covariates.py](#regress_out_covariatespy)
+    1. [run_susier_2.py](#run_susier_2py)
+    1. [run_tensorqtl.py](#run_tensorqtlpy)
+    1. [validate_model.py](#validate_modelpy)
 
 
 # Data Formats
 
-Here are a few 
+Here are a few data formats that are used frequently in this library:
 
 ## Variant IDs
 
@@ -81,7 +89,7 @@ The parquet phenotype specification is a lot like the parquet genotype specifica
 
 # Scripts
 
-Here are usage notes and command-line arguments for the scripts I've used in the ImageXcan pipeline. Some of this is legacy code, so if I don't know what an argument does, I'll put in a `???`.
+Here are usage notes and command-line arguments for the scripts I've used in the ImageXcan pipeline. Some of this is legacy code, so if I don't mention a certain script, it's because I haven't worked with it. 
 
 Mostly, the convention is that a single dash before the argument like `-this` means the argument is mandatory, and a double dash like `--this` means the argument is optional. 
 
@@ -117,7 +125,7 @@ This script is meant to take the output of the [run_tensorqtl.py](#run_tensorqtl
 
 ## gwas_parsing.py
 
-This script is explained in great detail in the wiki. 
+This script is explained in great detail in the wiki. The only change I've added is the `--canonical_variant_id` option, which, when specified, builds a column (with name specified after `--canonical_variant_id`) of the `chr<chromosome>_<position>_<non-effect-allele>_<effect-allele>` variant IDs.
 
 ## model_training.py
 
@@ -207,5 +215,32 @@ This script loads genotype and phenotype data, and it uses the [susieR package](
 
 ## run_tensorqtl.py
 
+This script takes PLINK-formatted genotypes and parquet-formatted phenotypes, and runs GWAS using the [tensorqtl](https://github.com/broadinstitute/tensorqtl/tree/master/tensorqtl) library.
+
+| Argument | Description | Example Usage |
+| --- | --- | --- |
+| -plink_genotype | Specify the plink genotype prefix. The script will add the normal `.bed`, `.bim`, and `.fam` file extensions. | ~/genotype/plink_geno_files |
+| --parquet_genotype_metadata | If a metadata file for this genotype data exists, this can be merged in and result in more complete GWAS output files | |
+| -parquet_phenotype | Specify the path to a parquet phenotype file | | 
+| --pval_filter | Only write the results with pvalue less than or equal to this number. Defaults to 1. | | 
+| --maf_filter | Only perform GWAS on SNPs with $MAF \geq$ this number. Defaults to 0.05 | |
+| -parsimony | Logging amount. 1 means that everything is being logged; 10 (the default) is only high-level messages | |
+
+
 ## validate_model.py
+
+Given the text output of the [model_training.py](#model_trainingpy) script and a held-out data file, this computes prediction performance measures on the heldout data. 
+
+
+| Argument | Description | Example Usage |
+| --- | --- | --- |
+| -features | Either a single parquet genotype file, or a parquet genotype file that is configurable with a `chr` key. | ~/genotype/chr-{chr}_variants.parquet |
+| -feautes_annotation | Either a single parquet variant metadata file, or a parquet metadata file that is configurable with a `chr` key. | ~/genotype/chr-{chr}_variants_metadata.parquet |
+| -data | Phenotype data in parquet format | | 
+| -out_fp | Filename to print validation results to. | |
+| --model_weights | Text output from the model training script.  | | 
+| --sub_batches | Instead of running all of the phenotypes, split into this many batches. | |
+| --sub_batch | Run this batch (0-indexed) | |
+| -parsimony | Logging amount. 1 means that everything is being logged; 10 (the default) is only high-level messages | |
+
 
