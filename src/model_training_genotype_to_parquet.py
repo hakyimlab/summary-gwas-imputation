@@ -49,6 +49,23 @@ def generate_single_backend(args, variant_key):
     path_metadata_variant = args.output_prefix + ".variants_metadata.parquet"
     Parquet._save_metadata(path_metadata_variant, genotype.get_variants_metadata())
 
+def quick_save(args, variant_key):
+    logging.info("Loading Genotype")
+    dosage_conversion = GenotypeUtilities.impute_to_mean_conversion if args.impute_to_mean else None
+    dosage_filter = get_filter(args, variant_key)
+    genotype, individual_ids = ModelTraining.load_genotype_file(args.input_genotype_file, variant_key, dosage_conversion, dosage_filter)
+    genotype_df = genotype.get_variants(to_pandas=True)
+    print(genotype_df.head())
+    logging.info("Saving Genotype")
+    genotype_df.to_parquet(args.output_prefix + ".variants.parquet")
+
+    logging.info("Loading Metadata")
+    metadata_df = genotype.get_variants_metadata()
+    print(metadata_df.head())
+
+    logging.info("Saving Metadata")
+    metadata_df.to_parquet(args.output_prefix + ".variants_metadata.parquet")
+
 def generate_multi_backend(args, variant_key):
     logging.info("Processing Genotype")
     dosage_conversion = GenotypeUtilities.impute_to_mean_conversion if args.impute_to_mean else None
@@ -97,7 +114,9 @@ def run(args):
     logging.info("Loading SNP annotation")
     #TODO: make more generic
     variant_key = get_variant_key(args)
-    if args.split_by_chromosome:
+    if args.quick_save:
+        quick_save(args, variant_key)
+    elif args.split_by_chromosome:
         generate_multi_backend(args, variant_key)
     else:
         generate_single_backend(args, variant_key)
@@ -112,6 +131,8 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser("Convert model training format data to parquet format ")
     parser.add_argument("-snp_annotation_file", help="file with snp annotation", nargs="+")
+    parser.add_argument('--quick_save', help="Just go from Pandas to Parquet. Use in case of extremely high mem overhead.",
+                        default=False, action='store_true')
     parser.add_argument("-input_genotype_file", help="Alternative to the previous: just give the file")
     parser.add_argument("--only_in_key", help="Keep only variants in the snp annotation", action="store_true", default=False)
     parser.add_argument("--biallelic_only", help="Keep only biallelic snps", action="store_true", default=False)
